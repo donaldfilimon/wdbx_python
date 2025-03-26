@@ -2,7 +2,7 @@
 
 **`WORK IN PROGRESS`**
 
-WDBX is a super-speedy, ultra-responsive data store made for multi-personality AI systems. It mixes up cool tricks from vector similarity search, blockchain-style integrity, multiversion concurrency control (MV), and multi-head attention to keep your AI apps running smooth and strong.
+> WDBX is a super-speedy, ultra-responsive data store made for multi-personality AI systems. It mixes up cool tricks from vector similarity search, blockchain-style integrity, multiversion concurrency control (MV), and multi-head attention to keep your AI apps running smooth and strong.
 
 ## Features
 
