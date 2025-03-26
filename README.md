@@ -1,5 +1,7 @@
 # WDBX: Wide Distributed Block Exchange
 
+**`WORK IN PROGRESS`**
+
 WDBX is a high-throughput, low-latency data store designed for multi-persona AI systems. It combines advanced techniques from vector similarity search, blockchain-based integrity, multiversion concurrency control (MVCC), and multi-head attention to support robust and scalable AI applications.
 
 ## Features
