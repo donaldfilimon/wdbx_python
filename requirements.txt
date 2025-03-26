@@ -1,0 +1,4 @@
+numpy
+faiss
+aiohttp
+scikit-learn
