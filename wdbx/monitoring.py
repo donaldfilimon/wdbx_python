@@ -22,9 +22,12 @@ import traceback
 import queue
 import functools
 import random
-from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable
+from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable, TypeVar
 from contextlib import contextmanager
 from datetime import datetime
+
+# Define Self type for return type annotations
+T = TypeVar('T')
 
 try:
     import prometheus_client
@@ -33,6 +36,19 @@ try:
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
+    # Create dummy classes to avoid type errors
+    class Counter:
+        pass
+    class Gauge:
+        pass
+    class Histogram:
+        pass
+    class Summary:
+        pass
+    class Info:
+        pass
+    def prometheus_start_http_server(*args, **kwargs):
+        pass
     logging.warning("Prometheus client not available. Metrics will not be exported to Prometheus.")
 
 try:
@@ -44,6 +60,22 @@ try:
     OPENTELEMETRY_AVAILABLE = True
 except ImportError:
     OPENTELEMETRY_AVAILABLE = False
+    # Create dummy modules/classes to avoid type errors
+    class TracerProvider:
+        pass
+    class ConsoleSpanExporter:
+        pass
+    class SimpleSpanProcessor:
+        pass
+    class OTLPSpanExporter:
+        pass
+    trace = type('DummyModule', (), {
+        'get_tracer_provider': lambda: type('DummyProvider', (), {
+            'add_span_processor': lambda x: None
+        })(),
+        'get_current_span': lambda: None,
+        'set_tracer_provider': lambda x: None
+    })
     logging.warning("OpenTelemetry not available. Distributed tracing will not be available.")
 
 from wdbx.constants import logger
@@ -89,7 +121,7 @@ class MetricsRegistry:
             logger.error(f"Failed to start Prometheus metrics server: {e}")
             self.enable_prometheus = False
 
-    def counter(self, name: str, description: str, labels: List[str] = None) -> 'PrometheusCounter':
+    def counter(self, name: str, description: str, labels: Optional[List[str]] = None) -> 'PrometheusCounter':
         """
         Create or get a counter.
 
@@ -119,7 +151,7 @@ class MetricsRegistry:
 
             return PrometheusCounter(self, name, labels or [])
 
-    def gauge(self, name: str, description: str, labels: List[str] = None) -> 'PrometheusGauge':
+    def gauge(self, name: str, description: str, labels: Optional[List[str]] = None) -> 'PrometheusGauge':
         """
         Create or get a gauge.
 
@@ -149,8 +181,8 @@ class MetricsRegistry:
 
             return PrometheusGauge(self, name, labels or [])
 
-    def histogram(self, name: str, description: str, labels: List[str] = None,
-                buckets: List[float] = None) -> 'PrometheusHistogram':
+    def histogram(self, name: str, description: str, labels: Optional[List[str]] = None,
+                buckets: Optional[List[float]] = None) -> 'PrometheusHistogram':
         """
         Create or get a histogram.
 
@@ -186,7 +218,7 @@ class MetricsRegistry:
 
             return PrometheusHistogram(self, name, labels or [])
 
-    def summary(self, name: str, description: str, labels: List[str] = None) -> 'PrometheusSummary':
+    def summary(self, name: str, description: str, labels: Optional[List[str]] = None) -> 'PrometheusSummary':
         """
         Create or get a summary.
 
@@ -580,10 +612,11 @@ class SimpleCounter:
     def __init__(self, name: str, description: str, labels: List[str]):
         self.name = name
         self.description = description
-        self.labels = labels
+        self._labels = labels
         self.values = {}
+        self._label_values = None
 
-    def labels(self, *label_values):
+    def labels(self, *label_values) -> 'SimpleCounter':
         """
         Get a counter with the given label values.
 
@@ -593,13 +626,13 @@ class SimpleCounter:
         Returns:
             Self
         """
-        self.label_values = label_values
+        self._label_values = label_values
         key = ",".join(str(v) for v in label_values)
         if key not in self.values:
             self.values[key] = 0
         return self
 
-    def inc(self, value: float = 1):
+    def inc(self, value: float = 1) -> 'SimpleCounter':
         """
         Increment the counter.
 
@@ -609,8 +642,8 @@ class SimpleCounter:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             self.values[key] += value
         else:
             if "value" not in self.values:
@@ -624,10 +657,11 @@ class SimpleGauge:
     def __init__(self, name: str, description: str, labels: List[str]):
         self.name = name
         self.description = description
-        self.labels = labels
+        self._labels = labels
         self.values = {}
+        self._label_values = None
 
-    def labels(self, *label_values):
+    def labels(self, *label_values) -> 'SimpleGauge':
         """
         Get a gauge with the given label values.
 
@@ -637,13 +671,13 @@ class SimpleGauge:
         Returns:
             Self
         """
-        self.label_values = label_values
+        self._label_values = label_values
         key = ",".join(str(v) for v in label_values)
         if key not in self.values:
             self.values[key] = 0
         return self
 
-    def set(self, value: float):
+    def set(self, value: float) -> 'SimpleGauge':
         """
         Set the gauge value.
 
@@ -653,14 +687,14 @@ class SimpleGauge:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             self.values[key] = value
         else:
             self.values["value"] = value
         return self
 
-    def inc(self, value: float = 1):
+    def inc(self, value: float = 1) -> 'SimpleGauge':
         """
         Increment the gauge.
 
@@ -670,8 +704,8 @@ class SimpleGauge:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             if key not in self.values:
                 self.values[key] = 0
             self.values[key] += value
@@ -681,7 +715,7 @@ class SimpleGauge:
             self.values["value"] += value
         return self
 
-    def dec(self, value: float = 1):
+    def dec(self, value: float = 1) -> 'SimpleGauge':
         """
         Decrement the gauge.
 
@@ -691,8 +725,8 @@ class SimpleGauge:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             if key not in self.values:
                 self.values[key] = 0
             self.values[key] -= value
@@ -705,14 +739,15 @@ class SimpleGauge:
 
 class SimpleHistogram:
     """Simple implementation of a histogram."""
-    def __init__(self, name: str, description: str, labels: List[str], buckets: List[float] = None):
+    def __init__(self, name: str, description: str, labels: List[str], buckets: Optional[List[float]] = None):
         self.name = name
         self.description = description
-        self.labels = labels
+        self._labels = labels
         self.buckets = buckets or [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
         self.values = {}
+        self._label_values = None
 
-    def labels(self, *label_values):
+    def labels(self, *label_values) -> 'SimpleHistogram':
         """
         Get a histogram with the given label values.
 
@@ -722,13 +757,13 @@ class SimpleHistogram:
         Returns:
             Self
         """
-        self.label_values = label_values
+        self._label_values = label_values
         key = ",".join(str(v) for v in label_values)
         if key not in self.values:
             self.values[key] = []
         return self
 
-    def observe(self, value: float):
+    def observe(self, value: float) -> 'SimpleHistogram':
         """
         Observe a value.
 
@@ -738,8 +773,8 @@ class SimpleHistogram:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             if key not in self.values:
                 self.values[key] = []
             self.values[key].append(value)
@@ -755,10 +790,11 @@ class SimpleSummary:
     def __init__(self, name: str, description: str, labels: List[str]):
         self.name = name
         self.description = description
-        self.labels = labels
+        self._labels = labels
         self.values = {}
+        self._label_values = None
 
-    def labels(self, *label_values):
+    def labels(self, *label_values) -> 'SimpleSummary':
         """
         Get a summary with the given label values.
 
@@ -768,13 +804,13 @@ class SimpleSummary:
         Returns:
             Self
         """
-        self.label_values = label_values
+        self._label_values = label_values
         key = ",".join(str(v) for v in label_values)
         if key not in self.values:
             self.values[key] = []
         return self
 
-    def observe(self, value: float):
+    def observe(self, value: float) -> 'SimpleSummary':
         """
         Observe a value.
 
@@ -784,8 +820,8 @@ class SimpleSummary:
         Returns:
             Self
         """
-        if hasattr(self, "label_values"):
-            key = ",".join(str(v) for v in self.label_values)
+        if self._label_values:
+            key = ",".join(str(v) for v in self._label_values)
             if key not in self.values:
                 self.values[key] = []
             self.values[key].append(value)
@@ -803,7 +839,7 @@ class SimpleInfo:
         self.description = description
         self.values = {}
 
-    def info(self, info: Dict[str, str]):
+    def info(self, info: Dict[str, str]) -> 'SimpleInfo':
         """
         Set info values.
 
@@ -875,7 +911,7 @@ class TracingManager:
         return trace.get_current_span()
 
     def start_span(self, name: str, context: Optional[Any] = None,
-                kind: Optional[Any] = None, attributes: Dict[str, Any] = None) -> Any:
+                kind: Optional[Any] = None, attributes: Optional[Dict[str, Any]] = None) -> Any:
         """
         Start a new span.
 
@@ -902,7 +938,7 @@ class TracingManager:
         return self.tracer.start_span(name, **span_kwargs)
 
     @contextmanager
-    def trace(self, name: str, attributes: Dict[str, Any] = None):
+    def trace(self, name: str, attributes: Optional[Dict[str, Any]] = None):
         """
         Context manager for creating a span.
 
@@ -914,10 +950,10 @@ class TracingManager:
             yield None
             return
 
-        with self.tracer.start_as_current_span(name, attributes=attributes) as span:
+        with self.tracer.start_as_current_span(name, attributes=attributes or {}) as span:
             yield span
 
-    def trace_function(self, name: Optional[str] = None, attributes: Dict[str, Any] = None):
+    def trace_function(self, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None):
         """
         Decorator for tracing a function.
 
@@ -931,8 +967,8 @@ class TracingManager:
         def decorator(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                span_name = name or func.__name__
-                with self.trace(span_name, attributes):
+                span_name = name or func.__qualname__
+                with self.trace(span_name, attributes or {}):
                     return func(*args, **kwargs)
             return wrapper
         return decorator
@@ -1312,7 +1348,7 @@ class MonitoringSystem:
         """
         return self.health.is_healthy()
 
-    def track_operation(self, operation_type: str, name: str, attributes: Dict[str, Any] = None):
+    def track_operation(self, operation_type: str, name: str, attributes: Optional[Dict[str, Any]] = None):
         """
         Context manager for tracking an operation.
 
@@ -1336,7 +1372,7 @@ class OperationTracker:
     Context manager for tracking operations.
     """
     def __init__(self, monitoring: MonitoringSystem, operation_type: str, name: str,
-                attributes: Dict[str, Any] = None):
+                attributes: Optional[Dict[str, Any]] = None):
         """
         Initialize the operation tracker.
 
@@ -1428,103 +1464,106 @@ def init_monitoring(app, service_name: str = "wdbx") -> MonitoringSystem:
     # Register health check for the app
     monitoring.register_health_check("app", lambda: True)
 
-    # Add monitoring-related routes
-    @app.route("/metrics", methods=["GET"])
-    def get_metrics():
-        """Expose metrics for Prometheus."""
-        # If Prometheus is available, use its metrics handler
-        if monitoring.metrics.enable_prometheus:
-            import io
-            from flask import Response
-            output = io.StringIO()
-            prometheus_client.write_to_textfile(output, prometheus_client.REGISTRY)
-            return Response(output.getvalue(), mimetype="text/plain")
+    try:
+        # Add monitoring-related routes
+        @app.route("/metrics", methods=["GET"])
+        def get_metrics():
+            """Expose metrics for Prometheus."""
+            # If Prometheus is available, use its metrics handler
+            if monitoring.metrics.enable_prometheus:
+                import io
+                from flask import Response
+                output = io.StringIO()
+                prometheus_client.write_to_textfile(output, prometheus_client.REGISTRY)
+                return Response(output.getvalue(), mimetype="text/plain")
 
-        # Otherwise, return our own metrics
-        from flask import jsonify
-        return jsonify(monitoring.metrics.get_all_metrics())
+            # Otherwise, return our own metrics
+            from flask import jsonify
+            return jsonify(monitoring.metrics.get_all_metrics())
 
-    @app.route("/health", methods=["GET"])
-    def get_health():
-        """Check health status."""
-        from flask import jsonify
-        health_status = monitoring.check_health()
-        all_healthy = all(health_status.values())
-        return jsonify({
-            "status": "healthy" if all_healthy else "unhealthy",
-            "checks": health_status,
-            "timestamp": time.time()
-        }), 200 if all_healthy else 503
+        @app.route("/health", methods=["GET"])
+        def get_health():
+            """Check health status."""
+            from flask import jsonify
+            health_status = monitoring.check_health()
+            all_healthy = all(health_status.values())
+            return jsonify({
+                "status": "healthy" if all_healthy else "unhealthy",
+                "checks": health_status,
+                "timestamp": time.time()
+            }), 200 if all_healthy else 503
 
-    @app.route("/health/live", methods=["GET"])
-    def get_liveness():
-        """Liveness probe for Kubernetes."""
-        from flask import jsonify
-        return jsonify({
-            "status": "alive",
-            "timestamp": time.time()
-        })
+        @app.route("/health/live", methods=["GET"])
+        def get_liveness():
+            """Liveness probe for Kubernetes."""
+            from flask import jsonify
+            return jsonify({
+                "status": "alive",
+                "timestamp": time.time()
+            })
 
-    @app.route("/health/ready", methods=["GET"])
-    def get_readiness():
-        """Readiness probe for Kubernetes."""
-        from flask import jsonify
-        health_status = monitoring.check_health()
-        all_healthy = all(health_status.values())
-        return jsonify({
-            "status": "ready" if all_healthy else "not ready",
-            "checks": health_status,
-            "timestamp": time.time()
-        }), 200 if all_healthy else 503
+        @app.route("/health/ready", methods=["GET"])
+        def get_readiness():
+            """Readiness probe for Kubernetes."""
+            from flask import jsonify
+            health_status = monitoring.check_health()
+            all_healthy = all(health_status.values())
+            return jsonify({
+                "status": "ready" if all_healthy else "not ready",
+                "checks": health_status,
+                "timestamp": time.time()
+            }), 200 if all_healthy else 503
 
-    @app.route("/logs", methods=["GET"])
-    def get_logs():
-        """Get recent logs."""
-        from flask import jsonify, request
-        count = request.args.get("count", 100, type=int)
-        level = request.args.get("level")
-        logger_name = request.args.get("logger")
+        @app.route("/logs", methods=["GET"])
+        def get_logs():
+            """Get recent logs."""
+            from flask import jsonify, request
+            count = request.args.get("count", 100, type=int)
+            level = request.args.get("level")
+            logger_name = request.args.get("logger")
 
-        logs = monitoring.logs.get_logs(count, level, logger_name)
-        return jsonify(logs)
+            logs = monitoring.logs.get_logs(count, level, logger_name)
+            return jsonify(logs)
 
-    # Add before/after request handlers to track HTTP requests
-    @app.before_request
-    def before_request():
-        """Track HTTP request start."""
-        from flask import request, g
+        # Add before/after request handlers to track HTTP requests
+        @app.before_request
+        def before_request():
+            """Track HTTP request start."""
+            from flask import request, g
 
-        # Store start time and tracker
-        g.request_start_time = time.time()
-        g.request_tracker = monitoring.track_operation(
-            "http",
-            f"{request.method} {request.path}",
-            {
-                "http.method": request.method,
-                "http.url": request.url,
-                "http.path": request.path,
-                "http.remote_addr": request.remote_addr
-            }
-        )
-        g.request_tracker.__enter__()
+            # Store start time and tracker
+            g.request_start_time = time.time()
+            g.request_tracker = monitoring.track_operation(
+                "http",
+                f"{request.method} {request.path}",
+                {
+                    "http.method": request.method,
+                    "http.url": request.url,
+                    "http.path": request.path,
+                    "http.remote_addr": request.remote_addr
+                }
+            )
+            g.request_tracker.__enter__()
 
-    @app.after_request
-    def after_request(response):
-        """Track HTTP request end."""
-        from flask import g, request
+        @app.after_request
+        def after_request(response):
+            """Track HTTP request end."""
+            from flask import g, request
 
-        if hasattr(g, "request_tracker"):
-            # Add response info to the span
-            g.request_tracker.span.set_attribute("http.status_code", response.status_code)
+            if hasattr(g, "request_tracker"):
+                # Add response info to the span
+                g.request_tracker.span.set_attribute("http.status_code", response.status_code)
 
-            # Exit the tracker
-            exc_info = (None, None, None)
-            if response.status_code >= 500:
-                exc_info = (Exception, Exception(f"HTTP {response.status_code}"), None)
+                # Exit the tracker
+                exc_info = (None, None, None)
+                if response.status_code >= 500:
+                    exc_info = (Exception, Exception(f"HTTP {response.status_code}"), None)
 
-            g.request_tracker.__exit__(*exc_info)
+                g.request_tracker.__exit__(*exc_info)
 
-        return response
+            return response
+    except Exception as e:
+        logger.error(f"Error setting up Flask monitoring routes: {e}")
 
     logger.info("Monitoring initialized")
     return monitoring

@@ -62,8 +62,8 @@ CLUSTER_NODES = os.environ.get("WDBX_CLUSTER_NODES", "127.0.0.1:8080").split(","
 CLUSTER_PORT = int(os.environ.get("WDBX_CLUSTER_PORT", 8500))
 CLUSTER_SECRET = os.environ.get("WDBX_CLUSTER_SECRET", "")
 CLUSTER_DATA_DIR = os.environ.get("WDBX_CLUSTER_DATA_DIR", "./wdbx_cluster")
-CLUSTER_ETCD_ENDPOINTS = os.environ.get("WDBX_ETCD_ENDPOINTS", "").split(",")
-CLUSTER_ZOOKEEPER_HOSTS = os.environ.get("WDBX_ZOOKEEPER_HOSTS", "").split(",")
+CLUSTER_ETCD_ENDPOINTS = os.environ.get("WDBX_ETCD_ENDPOINTS", "").split(",") if os.environ.get("WDBX_ETCD_ENDPOINTS") else []
+CLUSTER_ZOOKEEPER_HOSTS = os.environ.get("WDBX_ZOOKEEPER_HOSTS", "").split(",") if os.environ.get("WDBX_ZOOKEEPER_HOSTS") else []
 CLUSTER_HEARTBEAT_INTERVAL = float(os.environ.get("WDBX_HEARTBEAT_INTERVAL", 1.0))
 CLUSTER_ELECTION_TIMEOUT = float(os.environ.get("WDBX_ELECTION_TIMEOUT", 5.0))
 CLUSTER_REPLICATION_FACTOR = int(os.environ.get("WDBX_REPLICATION_FACTOR", 3))
@@ -97,12 +97,12 @@ class Node:
         self.host = host
         self.port = port
         self.state = NodeState.UNKNOWN
-        self.last_heartbeat = 0
+        self.last_heartbeat: float = 0.0
         self.term = 0
-        self.voted_for = None
-        self.leader_id = None
+        self.voted_for: Optional[str] = None
+        self.leader_id: Optional[str] = None
         self.data_version = 0
-        self.capabilities = set()
+        self.capabilities: Set[str] = set()
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -137,7 +137,7 @@ class Node:
         """
         node = cls(data["node_id"], data["host"], data["port"])
         node.state = data["state"]
-        node.last_heartbeat = data["last_heartbeat"]
+        node.last_heartbeat = float(data["last_heartbeat"])
         node.term = data["term"]
         node.voted_for = data["voted_for"]
         node.leader_id = data["leader_id"]
@@ -313,12 +313,12 @@ class CoordinationBackend:
         """
         raise NotImplementedError("Subclasses must implement lock()")
 
-    def unlock(self, lock: Any) -> bool:
+    def unlock(self, lock_id: Any) -> bool:
         """
         Release a lock.
 
         Args:
-            lock: Lock object or identifier
+            lock_id: Lock object or identifier
 
         Returns:
             True if successful, False otherwise
@@ -528,7 +528,7 @@ class EtcdBackend(CoordinationBackend):
             logger.error(f"Failed to acquire lock in etcd: {e}")
             return None
 
-    def unlock(self, lock_id: str) -> bool:
+    def unlock(self, lock_id: Any) -> bool:
         """
         Release a lock.
 
@@ -733,7 +733,7 @@ class FileBackend(CoordinationBackend):
                 try:
                     key, value = self.watch_queue.get(timeout=1.0)
                     if key in self.watches:
-                        for callback in self.watches[key]:
+                        for callback in self.watches[key].values():
                             try:
                                 callback(key, value)
                             except Exception as e:
@@ -796,7 +796,7 @@ class FileBackend(CoordinationBackend):
 
         return watch_id
 
-    def unwatch(self, watch_id: str) -> bool:
+    def unwatch(self, watch_id: Any) -> bool:
         """
         Stop watching a key.
 
@@ -859,7 +859,7 @@ class FileBackend(CoordinationBackend):
             logger.error(f"Failed to acquire lock: {e}")
             return None
 
-    def unlock(self, lock_id: str) -> bool:
+    def unlock(self, lock_id: Any) -> bool:
         """
         Release a lock.
 
@@ -899,7 +899,7 @@ class ClusterCoordinator:
     """
     Coordinates cluster operations.
     """
-    def __init__(self, node_id: str, backends: List[str] = None):
+    def __init__(self, node_id: str, backends: Optional[List[str]] = None):
         """
         Initialize the cluster coordinator.
 
@@ -1838,7 +1838,7 @@ class ClusterNode:
             }
 
 
-def init_cluster(app, wdbx_instance: Any) -> ClusterNode:
+def init_cluster(app, wdbx_instance: Any) -> Optional[ClusterNode]:
     """
     Initialize cluster functionality for a Flask application.
 
@@ -1883,7 +1883,7 @@ def init_cluster(app, wdbx_instance: Any) -> ClusterNode:
         @app.before_request
         def check_leader():
             """Check if this node is the leader for certain operations."""
-            from flask import request, abort
+            from flask import request, jsonify
 
             # List of paths that require leader status
             leader_paths = [

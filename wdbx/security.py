@@ -19,21 +19,22 @@ import json
 import logging
 import threading
 import ipaddress
-from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable
+from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable, cast
 from datetime import datetime, timedelta
 from functools import wraps
+
+# Import the logger first to avoid circular imports
+from wdbx.constants import logger
 
 try:
     import jwt
     JWT_AVAILABLE = True
 except ImportError:
     JWT_AVAILABLE = False
-    logging.warning("PyJWT not available. JWT authentication will not be available.")
+    logger.warning("PyJWT not available. JWT authentication will not be available.")
 
-from wdbx.constants import logger
-
-# Secret key for signing tokens
-SECRET_KEY = os.environ.get("WDBX_SECRET_KEY", str(uuid.uuid4()))
+# Secret key for signing tokens - use environment variable or generate a secure random key
+SECRET_KEY = os.environ.get("WDBX_SECRET_KEY", os.urandom(32).hex())
 
 # Default expiration time for tokens (24 hours)
 TOKEN_EXPIRATION = int(os.environ.get("WDBX_TOKEN_EXPIRATION", 86400))
@@ -59,7 +60,7 @@ class ApiKey:
     """
     def __init__(self, key_id: str, key_secret: str, name: str, role: str,
                 owner: str = "", expires_at: Optional[int] = None,
-                enabled: bool = True, ip_whitelist: List[str] = None):
+                enabled: bool = True, ip_whitelist: Optional[List[str]] = None):
         """
         Initialize an API key.
 
@@ -74,7 +75,7 @@ class ApiKey:
             ip_whitelist: List of allowed IP addresses (None for no restriction)
         """
         self.key_id = key_id
-        self.key_hash = self._hash_secret(key_secret)
+        self.key_hash = self._hash_secret(key_secret) if key_secret else ""
         self.name = name
         self.role = role
         self.owner = owner
@@ -82,24 +83,24 @@ class ApiKey:
         self.enabled = enabled
         self.ip_whitelist = ip_whitelist or []
         self.created_at = int(time.time())
-        self.last_used_at = None
+        self.last_used_at: Optional[int] = None
 
     def _hash_secret(self, secret: str) -> str:
         """
-        Securely hash the key secret.
+        Securely hash the key secret using PBKDF2-HMAC-SHA256.
 
         Args:
             secret: Secret to hash
 
         Returns:
-            Hashed secret
+            Hashed secret with salt
         """
         salt = hashlib.sha256(os.urandom(60)).hexdigest().encode('utf-8')
         hash_obj = hashlib.pbkdf2_hmac(
             'sha256',
             secret.encode('utf-8'),
             salt,
-            100000
+            100000  # High iteration count for security
         )
         return salt.decode('utf-8') + ':' + base64.b64encode(hash_obj).decode('utf-8')
 
@@ -113,6 +114,9 @@ class ApiKey:
         Returns:
             True if the secret is valid, False otherwise
         """
+        if not self.key_hash or ':' not in self.key_hash:
+            return False
+
         salt, stored_hash = self.key_hash.split(':')
         hash_obj = hashlib.pbkdf2_hmac(
             'sha256',
@@ -225,7 +229,7 @@ class RateLimiter:
         """
         self.window_size = window_size
         self.max_requests = max_requests
-        self.requests = {}  # key -> list of timestamps
+        self.requests: Dict[str, List[float]] = {}  # key -> list of timestamps
         self.lock = threading.RLock()
 
     def check_rate_limit(self, key: str) -> Tuple[bool, int]:
@@ -267,8 +271,7 @@ class RateLimiter:
         """
         with self.lock:
             if key:
-                if key in self.requests:
-                    del self.requests[key]
+                self.requests.pop(key, None)
             else:
                 self.requests.clear()
 
@@ -309,6 +312,11 @@ class SecurityManager:
 
         # Create file handler
         try:
+            # Create directory for log file if it doesn't exist
+            log_dir = os.path.dirname(AUDIT_LOG_FILE)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+
             handler = logging.FileHandler(AUDIT_LOG_FILE)
             formatter = logging.Formatter(
                 "%(asctime)s - %(levelname)s - %(message)s",
@@ -340,19 +348,24 @@ class SecurityManager:
             # Load API keys
             api_keys_path = os.path.join(self.storage_path, "api_keys.json")
             if os.path.exists(api_keys_path):
-                with open(api_keys_path, "r") as f:
+                with open(api_keys_path, "r", encoding="utf-8") as f:
                     keys_data = json.load(f)
                     for key_data in keys_data:
-                        key = ApiKey.from_dict(key_data)
-                        self.api_keys[key.key_id] = key
+                        try:
+                            key = ApiKey.from_dict(key_data)
+                            self.api_keys[key.key_id] = key
+                        except KeyError as e:
+                            logger.warning(f"Skipping API key due to missing key: {e}")
 
             # Load roles
             roles_path = os.path.join(self.storage_path, "roles.json")
             if os.path.exists(roles_path):
-                with open(roles_path, "r") as f:
+                with open(roles_path, "r", encoding="utf-8") as f:
                     self.roles = json.load(f)
-        except Exception as e:
+        except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.error(f"Failed to load security data: {e}")
+        except Exception as e:
+            logger.exception(f"Unexpected error loading security data: {e}")
 
     def _save_data(self):
         """Save security data to storage."""
@@ -364,19 +377,32 @@ class SecurityManager:
 
             # Save API keys
             api_keys_path = os.path.join(self.storage_path, "api_keys.json")
-            with open(api_keys_path, "w") as f:
+            temp_path = f"{api_keys_path}.tmp"
+
+            # Write to temporary file first to prevent corruption if write fails
+            with open(temp_path, "w", encoding="utf-8") as f:
                 keys_data = [key.to_dict() for key in self.api_keys.values()]
                 json.dump(keys_data, f, indent=2)
 
+            # Rename to actual file
+            os.replace(temp_path, api_keys_path)
+
             # Save roles
             roles_path = os.path.join(self.storage_path, "roles.json")
-            with open(roles_path, "w") as f:
+            temp_path = f"{roles_path}.tmp"
+
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.roles, f, indent=2)
-        except Exception as e:
+
+            os.replace(temp_path, roles_path)
+
+        except (TypeError, FileNotFoundError) as e:
             logger.error(f"Failed to save security data: {e}")
+        except Exception as e:
+            logger.exception(f"Unexpected error saving security data: {e}")
 
     def create_api_key(self, name: str, role: str, owner: str = "",
-                     expires_in: Optional[int] = None, ip_whitelist: List[str] = None) -> Tuple[str, str]:
+                     expires_in: Optional[int] = None, ip_whitelist: Optional[List[str]] = None) -> Tuple[str, str]:
         """
         Create a new API key.
 
@@ -400,7 +426,7 @@ class SecurityManager:
 
             # Generate key ID and secret
             key_id = str(uuid.uuid4())
-            key_secret = base64.b64encode(os.urandom(32)).decode('utf-8')
+            key_secret = base64.urlsafe_b64encode(os.urandom(32)).decode('utf-8')
 
             # Calculate expiration timestamp
             expires_at = None
@@ -447,10 +473,9 @@ class SecurityManager:
         """
         with self.lock:
             # Check if the key exists
-            if key_id not in self.api_keys:
+            api_key = self.api_keys.get(key_id)
+            if not api_key:
                 return False
-
-            api_key = self.api_keys[key_id]
 
             # Verify the secret
             if not api_key.verify_secret(key_secret):
@@ -482,10 +507,9 @@ class SecurityManager:
             List of permissions, or empty list if the key doesn't exist
         """
         with self.lock:
-            if key_id not in self.api_keys:
+            api_key = self.api_keys.get(key_id)
+            if not api_key:
                 return []
-
-            api_key = self.api_keys[key_id]
 
             # Check if the key is valid
             if not api_key.is_valid():
@@ -519,11 +543,12 @@ class SecurityManager:
             True if the key was revoked, False otherwise
         """
         with self.lock:
-            if key_id not in self.api_keys:
+            api_key = self.api_keys.get(key_id)
+            if not api_key:
                 return False
 
             # Disable the key
-            self.api_keys[key_id].enabled = False
+            api_key.enabled = False
 
             # Save to storage
             self._save_data()
@@ -573,8 +598,19 @@ class SecurityManager:
             True if the role was created/updated, False otherwise
         """
         with self.lock:
+            # Validate role name
+            if not role_name:
+                logger.error("Role name cannot be empty")
+                return False
+
+            # Check for invalid characters in role name
+            if not role_name.isalnum() and role_name.replace("_", "").isalnum():
+                logger.warning(f"Role name '{role_name}' contains underscores. Using underscores is allowed but alphanumeric names are preferred.")
+            elif not role_name.isalnum():
+                logger.warning(f"Role name '{role_name}' contains non-alphanumeric characters. This is discouraged.")
+
             # Store the role
-            self.roles[role_name] = permissions
+            self.roles[role_name] = list(set(permissions))  # Remove duplicates
 
             # Save to storage
             self._save_data()
@@ -599,9 +635,10 @@ class SecurityManager:
                 return False
 
             # Check if any API keys are using this role
-            for key in self.api_keys.values():
-                if key.role == role_name:
-                    return False
+            key_ids_with_role = [key.key_id for key in self.api_keys.values() if key.role == role_name]
+            if key_ids_with_role:
+                logger.warning(f"Cannot delete role '{role_name}'. API keys still using it: {key_ids_with_role}")
+                return False
 
             # Delete the role
             del self.roles[role_name]
@@ -630,10 +667,9 @@ class SecurityManager:
             return None
 
         with self.lock:
-            if key_id not in self.api_keys:
+            api_key = self.api_keys.get(key_id)
+            if not api_key:
                 return None
-
-            api_key = self.api_keys[key_id]
 
             # Check if the key is valid
             if not api_key.is_valid():
@@ -650,7 +686,17 @@ class SecurityManager:
             }
 
             # Generate token
-            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+            try:
+                if JWT_AVAILABLE:
+                    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+                    # In PyJWT >=2.0.0, encode returns a string, but in <2.0.0 it returns bytes
+                    if isinstance(token, bytes):
+                        token = token.decode('utf-8')
+                    return token
+                return None
+            except Exception as e:
+                logger.error(f"Failed to generate JWT token: {e}")
+                return None
 
             # Log the action
             self.audit_logger.info(f"JWT token generated for API key: {key_id}")
@@ -673,32 +719,37 @@ class SecurityManager:
 
         try:
             # Decode and verify the token
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            if JWT_AVAILABLE:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
 
-            # Check if the key exists and is valid
-            key_id = payload.get("sub")
-            if not key_id or key_id not in self.api_keys:
-                return None
+                # Check if the key exists and is valid
+                key_id = payload.get("sub")
+                if not key_id or key_id not in self.api_keys:
+                    return None
 
-            api_key = self.api_keys[key_id]
-            if not api_key.is_valid():
-                return None
+                api_key = self.api_keys[key_id]
+                if not api_key.is_valid():
+                    return None
 
-            # Apply rate limiting
-            allowed, remaining = self.rate_limiter.check_rate_limit(key_id)
-            if not allowed:
-                self.audit_logger.warning(f"Rate limit exceeded for API key: {key_id}")
-                return None
+                # Apply rate limiting
+                allowed, remaining = self.rate_limiter.check_rate_limit(key_id)
+                if not allowed:
+                    self.audit_logger.warning(f"Rate limit exceeded for API key: {key_id}")
+                    return None
 
-            # Update last used timestamp
-            api_key.last_used_at = int(time.time())
+                # Update last used timestamp
+                api_key.last_used_at = int(time.time())
 
-            return payload
-        except jwt.ExpiredSignatureError:
-            logger.warning("JWT token has expired")
+                return payload
             return None
-        except jwt.InvalidTokenError:
-            logger.warning("Invalid JWT token")
+        except Exception as e:
+            if JWT_AVAILABLE:
+                if isinstance(e, jwt.ExpiredSignatureError):
+                    logger.warning("JWT token has expired")
+                elif isinstance(e, jwt.InvalidTokenError):
+                    logger.warning("Invalid JWT token")
+                else:
+                    logger.error(f"Failed to validate JWT token: {e}")
             return None
 
     def log_security_event(self, event_type: str, details: Dict[str, Any],
@@ -711,7 +762,14 @@ class SecurityManager:
             details: Event details
             level: Log level
         """
-        message = f"{event_type}: {json.dumps(details)}"
+        # Sanitize sensitive data from logs
+        sanitized_details = details.copy()
+        if "token" in sanitized_details:
+            sanitized_details["token"] = "***REDACTED***"
+        if "key_secret" in sanitized_details:
+            sanitized_details["key_secret"] = "***REDACTED***"
+
+        message = f"{event_type}: {json.dumps(sanitized_details)}"
 
         if level == "DEBUG":
             self.audit_logger.debug(message)
@@ -736,10 +794,12 @@ def require_auth(permission: Optional[str] = None):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            from flask import request, jsonify
+            # Import Flask here to avoid circular imports
+            from flask import request, jsonify, current_app, Flask
 
             # Get security manager
-            security_manager = getattr(request.app, "security_manager", None)
+            app = current_app
+            security_manager = cast(SecurityManager, getattr(app, "security_manager", None))
             if not security_manager:
                 return jsonify({"error": "Security manager not available"}), 500
 
@@ -750,35 +810,49 @@ def require_auth(permission: Optional[str] = None):
                 auth_header = request.headers.get("Authorization")
                 if auth_header and auth_header.startswith("Bearer "):
                     token = auth_header[7:]
-                    payload = security_manager.validate_jwt_token(token)
-                    if payload:
-                        # Check permission if required
-                        if permission and not security_manager.check_permission(payload["sub"], permission):
+                    if token:
+                        payload = security_manager.validate_jwt_token(token)
+                        if payload:
+                            key_id = payload.get("sub")
+                            if not key_id:
+                                security_manager.log_security_event(
+                                    "Invalid JWT payload",
+                                    {
+                                        "endpoint": request.path,
+                                        "method": request.method,
+                                        "ip": request.remote_addr
+                                    },
+                                    "WARNING"
+                                )
+                                return jsonify({"error": "Invalid JWT payload"}), 401
+
+                            # Check permission if required
+                            if permission and not security_manager.check_permission(key_id, permission):
+                                security_manager.log_security_event(
+                                    "Permission denied",
+                                    {
+                                        "key_id": key_id,
+                                        "permission": permission,
+                                        "endpoint": request.path,
+                                        "method": request.method,
+                                        "ip": request.remote_addr
+                                    },
+                                    "WARNING"
+                                )
+                                return jsonify({"error": "Permission denied"}), 403
+
+                            # Log the access
                             security_manager.log_security_event(
-                                "Permission denied",
+                                "API access",
                                 {
-                                    "key_id": payload["sub"],
-                                    "permission": permission,
+                                    "key_id": key_id,
                                     "endpoint": request.path,
                                     "method": request.method,
                                     "ip": request.remote_addr
-                                },
-                                "WARNING"
+                                }
                             )
-                            return jsonify({"error": "Permission denied"}), 403
 
-                        # Log the access
-                        security_manager.log_security_event(
-                            "API access",
-                            {
-                                "key_id": payload["sub"],
-                                "endpoint": request.path,
-                                "method": request.method,
-                                "ip": request.remote_addr
-                            }
-                        )
-
-                        return f(*args, **kwargs)
+                            return f(*args, **kwargs)
 
                 return jsonify({"error": "Authentication required"}), 401
 
@@ -845,6 +919,15 @@ def init_security(app, storage_path: Optional[str] = None) -> SecurityManager:
     Returns:
         SecurityManager instance
     """
+    # Try to make storage path absolute if it's relative
+    if storage_path and not os.path.isabs(storage_path):
+        try:
+            app_root = os.path.abspath(os.path.dirname(app.root_path))
+            storage_path = os.path.join(app_root, storage_path)
+        except AttributeError:
+            # Not a Flask app or no root_path
+            pass
+
     security_manager = SecurityManager(storage_path)
     app.security_manager = security_manager
 
