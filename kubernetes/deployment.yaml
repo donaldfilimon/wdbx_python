@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wdbx-server
+  labels:
+    app: wdbx
+    component: server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: wdbx
+      component: server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: wdbx
+        component: server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: wdbx-server
+        image: wdbx/server:latest
+        imagePullPolicy: Always
+        env:
+        - name: WDBX_CONFIG_PATH
+          value: "/etc/wdbx/config.yaml"
+        - name: WDBX_LOG_LEVEL
+          value: "INFO"
+        - name: WDBX_DATA_DIR
+          value: "/data"
+        - name: WDBX_ML_BACKEND
+          value: "auto"
+        - name: WDBX_MEMORY_OPTIMIZATION_ENABLED
+          value: "true"
+        - name: WDBX_VECTOR_DIMENSION
+          value: "1536"
+        - name: WDBX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wdbx-secrets
+              key: api-key
+        - name: WDBX_NUM_WORKERS
+          value: "4"
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        volumeMounts:
+        - name: wdbx-config
+          mountPath: /etc/wdbx
+        - name: wdbx-data
+          mountPath: /data
+      volumes:
+      - name: wdbx-config
+        configMap:
+          name: wdbx-config
+      - name: wdbx-data
+        persistentVolumeClaim:
+          claimName: wdbx-data-pvc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wdbx-config
+data:
+  config.yaml: |
+    version: "1.0.0"
+    server:
+      host: "0.0.0.0"
+      port: 8080
+      worker_threads: 4
+      debug: false
+      cors_origins: ["*"]
+    vector:
+      dimension: 1536
+      similarity_threshold: 0.7
+    storage:
+      data_dir: "/data"
+      max_cache_size_mb: 1024
+      persistence_enabled: true
+    memory:
+      optimization_enabled: true
+      optimization_interval_seconds: 300
+      max_memory_usage_mb: 3072
+    ml:
+      preferred_backend: "auto"
+      faiss_index_type: "Flat"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wdbx-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wdbx-secrets
+type: Opaque
+stringData:
+  api-key: "generate-a-secure-api-key-here" 

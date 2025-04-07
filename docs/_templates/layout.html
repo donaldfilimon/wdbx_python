@@ -1,0 +1,11 @@
+{% extends "pydata_sphinx_theme/layout.html" %}
+
+{% block extrahead %}
+{{ super() }}
+<link rel="stylesheet" type="text/css" href="{{ pathto('_static/custom.css', 1) }}" />
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="text/javascript" src="{{ pathto('_static/custom.js', 1) }}"></script>
+{% endblock %} 

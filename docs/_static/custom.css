@@ -1,0 +1,153 @@
+/* WDBX Documentation - Custom CSS */
+
+/* Custom color variables */
+:root {
+  --wdbx-primary: #3178c6;
+  --wdbx-secondary: #5b9bd5;
+  --wdbx-accent: #ff9d45;
+  --wdbx-success: #4caf50;
+  --wdbx-warning: #ff9800;
+  --wdbx-danger: #f44336;
+  --wdbx-info: #2196f3;
+  --wdbx-code-bg: rgba(27, 31, 35, 0.05);
+}
+
+/* Dark mode variables */
+html[data-theme="dark"] {
+  --wdbx-primary: #4b8fd2;
+  --wdbx-secondary: #6ca2d4;
+  --wdbx-accent: #ffae65;
+  --wdbx-code-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Links */
+a {
+  color: var(--wdbx-primary);
+}
+
+a:hover {
+  color: var(--wdbx-secondary);
+  text-decoration: underline;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  border-bottom: 1px solid var(--pst-color-border);
+  padding-bottom: 0.5rem;
+}
+
+/* Code blocks */
+pre {
+  background-color: var(--wdbx-code-bg);
+  border-radius: 4px;
+  padding: 0.8rem;
+}
+
+/* Admonitions (notes, warnings, etc.) */
+.admonition {
+  border-radius: 4px;
+  margin: 1.5rem 0;
+}
+
+.admonition.note {
+  border-left-color: var(--wdbx-info);
+}
+
+.admonition.warning {
+  border-left-color: var(--wdbx-warning);
+}
+
+.admonition.danger {
+  border-left-color: var(--wdbx-danger);
+}
+
+.admonition.success {
+  border-left-color: var(--wdbx-success);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+}
+
+table th {
+  background-color: var(--pst-color-background);
+  font-weight: 600;
+}
+
+table th, table td {
+  padding: 0.5rem;
+  border: 1px solid var(--pst-color-border);
+}
+
+/* Navigation sidebar */
+nav.bd-links {
+  font-size: 0.95rem;
+}
+
+nav.bd-links .active {
+  font-weight: 600;
+  color: var(--wdbx-primary);
+}
+
+/* Button styles */
+.btn-primary {
+  background-color: var(--wdbx-primary);
+  border-color: var(--wdbx-primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--wdbx-secondary);
+  border-color: var(--wdbx-secondary);
+}
+
+/* Footer customization */
+footer {
+  margin-top: 3rem;
+  font-size: 0.9rem;
+}
+
+/* Mobile responsiveness improvements */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.8rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+  }
+  
+  .bd-sidebar-primary {
+    max-height: 70vh;
+  }
+}
+
+/* API documentation improvements */
+dl.py.class, dl.py.function, dl.py.method {
+  padding: 1rem;
+  margin: 1.5rem 0;
+  border-radius: 4px;
+  border: 1px solid var(--pst-color-border);
+}
+
+dl.py dt.sig {
+  background-color: var(--wdbx-code-bg);
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+/* Search result highlighting */
+.highlighted {
+  background-color: var(--wdbx-accent);
+  color: white;
+  padding: 0 2px;
+  border-radius: 2px;
+} 

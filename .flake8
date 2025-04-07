@@ -1,0 +1,9 @@
+[flake8]
+max-line-length = 100
+extend-ignore = E203, W503
+exclude = .git,__pycache__,build,dist
+per-file-ignores =
+    # Allow unused imports in __init__.py
+    __init__.py:F401
+    # Allow type annotations on variables with type ignore comments
+    wdbx/wdbx.py:F821 

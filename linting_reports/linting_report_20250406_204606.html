@@ -1,0 +1,78 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>WDBX Linting Report - 20250406_204606</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1, h2, h3 { color: #333; }
+            .section { margin-bottom: 30px; }
+            .success { color: green; }
+            .warning { color: orange; }
+            .error { color: red; }
+            pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+        </style>
+    </head>
+    <body>
+        <h1>WDBX Linting Report</h1>
+        <div class="section">
+            <h2>Summary</h2>
+            <p><strong>Generated:</strong> 2025-04-06 20:46:06</p>
+            <p><strong>Target:</strong> src/wdbx/plugins</p>
+            <p><strong>Fix Applied:</strong> Yes</p>
+            <p><strong>General Linter Status:</strong> 
+                <span class="success">
+                    Success
+                </span>
+            </p>
+            <p><strong>Discord Bot Fixer Status:</strong> 
+                <span class="success">
+                    Success
+                </span>
+            </p>
+        </div>
+        
+        <div class="section">
+            <h2>General Linter Output</h2>
+            <pre></pre>
+            <h3 class="error">Errors</h3><pre>WARNING: Error importing existing fixer from scripts/lint.py: unterminated string literal (detected at line 105) (scripts/lint.py, line 105)
+INFO: Found existing fixer in scripts/simple_lint.py
+INFO: Found existing fixer in wdbx_plugins/fix_discord_bot.py
+INFO: Found existing fixer in fix_discord_bot.py
+INFO: Found 2 Python files to process
+INFO: Note: We found an existing Discord bot fixer in scripts/simple_lint.py.
+INFO: It's recommended to run it separately as it directly modifies files.
+INFO: Note: We found an existing Discord bot fixer in wdbx_plugins/fix_discord_bot.py.
+INFO: It's recommended to run it separately as it directly modifies files.
+INFO: Note: We found an existing Discord bot fixer in fix_discord_bot.py.
+INFO: It's recommended to run it separately as it directly modifies files.
+INFO: Fixed issues in src/wdbx/plugins\discord_bot.py
+INFO: Fixed issues in src/wdbx/plugins\__init__.py
+INFO: Processed 2 files: 2 succeeded, 0 failed
+</pre>
+        </div>
+        
+        <div class="section">
+            <h2>Discord Bot Fixer Output</h2>
+            <pre></pre>
+            <h3 class="error">Errors</h3><pre>INFO: Found Discord bot plugin at: src/wdbx/plugins/discord_bot.py
+INFO: Successfully fixed issues in src/wdbx/plugins/discord_bot.py
+</pre>
+        </div>
+        
+        <div class="section">
+            <h2>Recommendations</h2>
+            <ul>
+                
+                <li>Review any remaining issues manually</li>
+                <li>Run tests to ensure fixes didn't break functionality</li>
+                <li>Consider using IDE-specific linting tools (e.g., pylint, flake8) for more comprehensive checks</li>
+            </ul>
+        </div>
+    </body>
+    </html>
+    

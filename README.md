@@ -1,341 +1,414 @@
-# WDBX: Wide Distributed Block Database
+# WDBX Python
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python Versions](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)]()
-[![Status](https://img.shields.io/badge/status-beta-yellow)]()
+A high-performance vector database with blockchain-inspired features and multi-version concurrency control.
 
-WDBX is a high-performance, distributed database system specifically designed for multi-personality AI systems. It combines vector similarity search, blockchain-style integrity, multiversion concurrency control (MVCC), and multi-head attention mechanisms to create a robust and flexible foundation for advanced AI applications.
+## Introduction
 
-## ✨ Features
+[Existing introduction content...]
 
-- **Embedding Vector Storage:** Store, update, and search high-dimensional embedding vectors using efficient similarity search.
-- **Blockchain-Inspired Data Integrity:** Create and validate blocks that link embedding vectors together with cryptographic integrity.
-- **MVCC Concurrency:** Handle read/write operations concurrently with conflict resolution.
-- **Neural Backtracking:** Trace activation patterns and detect semantic drift in AI responses.
-- **Multi-Head Attention:** Apply transformer-like attention for sequence modeling and enhanced context understanding.
-- **Multi-Persona Framework:** Manage multiple AI personas and blend responses based on context.
-- **Content Filtering & Bias Mitigation:** Ensure responses are safe and balanced.
-- **Asynchronous HTTP Server:** Serve API endpoints using aiohttp for high-performance access.
-- **Pure Python Implementation:** Works with standard library dependencies for core functionality.
-- **Optional High-Performance Backend:** Accelerate operations with FAISS, JAX, and other libraries when available.
+## Project Structure
 
-## 🚀 Quick Start
+The WDBX project is organized as follows:
 
-### Installation
-
-WDBX can be installed directly from GitHub or PyPI:
-
-```bash
-# Install from PyPI with basic dependencies
-pip install wdbx
-
-# Install with all dependencies for optimal performance
-pip install wdbx[full]
-
-# Install directly from GitHub
-pip install git+https://github.com/username/wdbx.git
+```
+wdbx_python/
+├── data/                   # Data storage directory
+├── docs/                   # Documentation
+├── examples/               # Example usage scripts
+├── scripts/                # Utility scripts
+│   ├── benchmarks/         # Performance testing tools
+│   ├── linters/            # Code quality tools
+│   └── runners/            # Application runners
+├── src/                    # Source code
+│   └── wdbx/               # Main package
+│       ├── core/           # Core functionality
+│       ├── ml/             # Machine learning components
+│       ├── storage/        # Data storage modules
+│       └── ui/             # User interfaces
+├── tests/                  # Tests
+│   ├── imports/            # Import validation tests
+│   ├── integration/        # Integration tests
+│   ├── ml/                 # ML-specific tests
+│   └── unit/               # Unit tests
+└── wdbx_tool.py            # Unified command launcher
 ```
 
-### Basic Usage
+Use the unified tool launcher for common operations:
 
-Here's a simple example of using WDBX to store and retrieve embedding vectors:
+```bash
+# Run the application
+python scripts/wdbx_tool.py run
+
+# Launch the web UI
+python scripts/wdbx_tool.py web
+
+# Run tests
+python scripts/wdbx_tool.py test
+
+# Run benchmarks
+python scripts/wdbx_tool.py benchmark
+```
+
+## Addressing Circular Imports
+
+This project had circular dependency issues that were resolved using the following strategies:
+
+1. **Strategic use of `__init__.py` files**:
+   - Created placeholder classes in module `__init__.py` files to break circular dependencies
+   - Defined shared types and constants in module-level scope
+
+2. **TYPE_CHECKING conditional imports**:
+   - Used `if TYPE_CHECKING:` conditional imports for type checking without runtime dependencies
+   - This allows proper type hinting while avoiding circular imports at runtime
+
+3. **Dynamic imports**:
+   - Implemented helper functions like `get_mvcc_transaction()` to dynamically import required classes
+   - Only imports dependencies when actually needed during execution
+
+4. **Centralized constants**:
+   - Created a core constants module at `src/wdbx/core/constants.py`
+   - All system-wide constants are defined in one place for better maintainability
+
+5. **Standardized logging**:
+   - Implemented a comprehensive logging system in `src/wdbx/utils/logging_utils.py`
+   - Provides consistent log formatting, rotating file handlers, and level management across all components
+
+## Development
+
+To run tests for import validation:
+
+```
+python test_imports.py
+```
+
+## Dependencies
+
+- NumPy: Core numerical operations
+- FAISS (optional): For efficient vector similarity search
+- LMDB (optional): For persistent storage
+- JAX/PyTorch (optional): For accelerated vector operations
+
+## Features
+
+- High-performance vector similarity search
+- Distributed query planning across multiple shards
+- Blockchain-based storage for data provenance
+- MVCC transactional support
+- Web UI for visualization and monitoring
+- Python API for easy integration
+- Customizable CLI with plugin system and theming
+- Multiple backend support (JAX, PyTorch, NumPy)
+
+## Installation
+
+```bash
+# Install from source
+pip install -e .
+
+# Install with development dependencies
+pip install -e ".[dev]"
+
+# Install with ML acceleration
+pip install -e ".[ml]"
+
+# Install with vector search optimization
+pip install -e ".[vector]"
+
+# Install everything
+pip install -e ".[full]"
+```
+
+## Quick Start
 
 ```python
+from wdbx import WDBX, WDBXConfig, EmbeddingVector
 import numpy as np
-from wdbx import WDBX
-from wdbx.data_structures import EmbeddingVector
 
-# Initialize WDBX with 512-dimensional vectors
-wdbx = WDBX(vector_dimension=512, num_shards=4)
+# Create a WDBX instance with default configuration
+config = WDBXConfig(
+    vector_dimension=1024,
+    num_shards=2,
+    data_dir="./wdbx_data"
+)
+db = WDBX(config=config)
 
-# Create and store an embedding vector
-vector = np.random.randn(512).astype(np.float32)
+# Store a vector
+vector = np.random.randn(config.vector_dimension).astype(np.float32)
 embedding = EmbeddingVector(
     vector=vector,
-    metadata={"description": "Sample embedding", "source": "example"}
+    metadata={
+        "description": "Example vector",
+        "timestamp": 1649926800,
+        "source": "example"
+    }
 )
-vector_id = wdbx.store_embedding(embedding)
-print(f"Stored embedding with ID: {vector_id}")
+vector_id = db.store_embedding(embedding)
+print(f"Stored vector with ID: {vector_id}")
 
 # Search for similar vectors
-results = wdbx.search_similar_vectors(vector, top_k=5)
+query_vector = np.random.randn(config.vector_dimension).astype(np.float32)
+results = db.search_similar_vectors(query_vector, top_k=5)
 for vector_id, similarity in results:
     print(f"Vector ID: {vector_id}, Similarity: {similarity:.4f}")
 
-# Create a neural trace
-trace_id = wdbx.create_neural_trace(vector)
-print(f"Created trace with ID: {trace_id}")
+# Start the Streamlit UI
+python scripts/runners/run_streamlit.py
 ```
 
-### Using the Multi-Persona Framework
+## Command Line Interface
 
-```python
-from wdbx import WDBX
-from wdbx.persona import PersonaManager
+WDBX offers a powerful command-line interface with multiple modes and customization options.
 
-# Initialize WDBX
-wdbx = WDBX(vector_dimension=1024)
-
-# Initialize the persona manager
-persona_manager = PersonaManager(wdbx)
-
-# Process a user message
-user_input = "Can you explain how vector databases work?"
-context = {"chain_id": None, "block_ids": []}
-response, block_id = persona_manager.process_user_input(user_input, context)
-
-print(f"User: {user_input}")
-print(f"AI: {response}")
-print(f"Block ID: {block_id}")
-```
-
-### Running the Interactive Mode
-
-WDBX comes with an interactive mode that allows you to explore its functionality from the command line:
+### Interactive Mode
 
 ```bash
-# Start interactive mode
-python -m wdbx.cli interactive
-
-# Run the example demonstration
-python -m wdbx.cli example
-
-# Start the HTTP server
-python -m wdbx.cli server --host 127.0.0.1 --port 8080
+wdbx interactive [options]
 ```
 
-## 🧩 Architecture
+Options:
+- `--data-dir`: Set the data directory (default: ./data)
+- `--dimension`: Set vector dimension (default: 128)
+- `--ml-backend`: Choose ML backend (numpy, jax, torch)
+- `--use-gpu`: Use GPU if available
+- `--theme`: Choose UI theme (default, dark, light)
+- `--plugins`: Comma-separated list of plugins to load
 
-WDBX consists of several key components:
+### Server Mode
 
-### Core Components
-
-- **Vector Store:** Manages embedding vectors with efficient similarity search.
-- **Blockchain Manager:** Handles data integrity using blockchain-inspired techniques.
-- **MVCC Manager:** Provides multiversion concurrency control for transactions.
-- **Neural Backtracker:** Traces activation patterns through the system.
-- **Shard Manager:** Distributes data across multiple shards for scalability.
-- **Persona Manager:** Manages multiple AI personas and response generation.
-
-### Database Components
-
-- **HTTP Client:** Connect to WDBX over HTTP.
-- **Socket Client:** Connect to WDBX using raw sockets for high-performance access.
-- **Filesystem Client:** Use the local filesystem as a database backend.
-
-### System Architecture
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                          WDBX Client                           │
-└───────────────────────────────┬────────────────────────────────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │                 │                 │
-┌─────────────▼──────┐ ┌────────▼───────┐ ┌───────▼────────┐
-│    HTTP Client     │ │  Socket Client  │ │ Filesystem Client │
-└─────────────┬──────┘ └────────┬───────┘ └───────┬────────┘
-              │                 │                 │
-┌─────────────▼─────────────────▼─────────────────▼────────────┐
-│                       WDBX Server                            │
-├──────────────┬──────────────┬───────────────┬───────────────┤
-│ Vector Store │ Blockchain   │ MVCC Manager  │ Neural        │
-│              │ Manager      │               │ Backtracker   │
-├──────────────┼──────────────┼───────────────┼───────────────┤
-│ Shard        │ Persona      │ Content       │ Multi-Head    │
-│ Manager      │ Manager      │ Filter        │ Attention     │
-└──────────────┴──────────────┴───────────────┴───────────────┘
+```bash
+wdbx server [options]
 ```
 
-## 📚 API Reference
+Options:
+- `--host`: Server host (default: localhost)
+- `--port`: Server port (default: 8080)
+- `--workers`: Number of worker processes
+- `--log-level`: Set logging level
 
-### WDBX Class
+### Web UI Mode
 
-The main entry point for interacting with WDBX:
+```bash
+wdbx web [options]
+```
+
+Options:
+- `--port`: Web UI port (default: 3000)
+- `--server-url`: URL of the WDBX server
+- `--theme`: Web UI theme (light, dark, auto)
+
+### Benchmark Mode
+
+```bash
+wdbx benchmark [options]
+```
+
+Options:
+- `--vectors`: Number of vectors to use in benchmarks
+- `--dimension`: Vector dimension
+- `--test`: Specific test to run
+- `--output`: Output file for benchmark results
+
+## Plugin System
+
+The CLI can be extended with plugins that add new commands:
 
 ```python
-wdbx = WDBX(vector_dimension=1024, num_shards=8)
+def register_commands(plugin_registry):
+    plugin_registry["mycmd"] = my_command_function
+    
+def my_command_function(db, args):
+    print("My custom command!")
 ```
 
-- `store_embedding(embedding_vector)`: Store an embedding vector and return its ID.
-- `create_conversation_block(data, embeddings, chain_id=None, context_references=None)`: Create a block containing conversation data and embeddings.
-- `search_similar_vectors(query_vector, top_k=10)`: Search for vectors similar to the query vector.
-- `create_neural_trace(query_vector)`: Create a neural trace for the query vector.
-- `get_conversation_context(block_ids)`: Get the conversation context for the given block IDs.
-- `get_system_stats()`: Get statistics about system usage.
+Available plugins include:
+- `visualization`: Adds commands for visualizing vector data
 
-### EmbeddingVector Class
+## Web UI
 
-Represents a high-dimensional embedding vector with metadata:
+WDBX includes a Streamlit-based UI for visualizing and interacting with vectors:
+
+```bash
+# Run the Streamlit app
+python scripts/runners/run_streamlit.py
+
+# Or use Streamlit directly
+streamlit run src/wdbx/ui/streamlit_app.py
+```
+
+The Streamlit UI provides:
+- Interactive vector visualization with PCA, TSNE, and UMAP dimensionality reduction
+- Similarity search functionality
+- Store management
+- Metadata exploration
+
+## Development
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+python scripts/runners/run_tests.py
+
+# Run with coverage
+python scripts/runners/run_tests.py --coverage
+
+# Run vector store benchmarks
+python scripts/benchmarks/vector_store_benchmark.py
+
+# Run linters/code quality tools
+python scripts/linters/fix_lint.py src/wdbx
+```
+
+## Debugging
+
+The wdbx package includes enhanced debugging capabilities:
 
 ```python
-embedding = EmbeddingVector(vector=vector_data, metadata={"source": "user_query"})
+from wdbx.debugger import set_trace, wdbx_debug, debug_vector
+
+# Use as a decorator
+@wdbx_debug
+def my_function():
+    ...
+
+# Debug specific vectors
+debug_vector(vector, "input_vector")
 ```
 
-- `normalize()`: Return a normalized copy of the vector.
-- `serialize()`: Serialize the vector to bytes.
-- `deserialize(data)`: Create an EmbeddingVector from serialized bytes.
+## License
 
-### Block Class
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-Represents a data block with blockchain-inspired integrity:
+## Memory Optimization
+
+WDBX now includes automatic memory optimization features to prevent out-of-memory errors in production:
+
+- **Automatic memory monitoring**: The system monitors memory usage and triggers optimization when usage exceeds configured thresholds.
+- **Configurable thresholds**: Set `WDBX_MAX_MEMORY_PERCENT` (default: 85.0) to control when optimization starts.
+- **Periodic checks**: Configure check frequency with `WDBX_MEMORY_CHECK_INTERVAL` (default: 10 refresh cycles).
+- **Manual optimization**: Trigger optimization programmatically via `vector_store.optimize_memory()`.
+
+Example configuration:
+
+```bash
+# Set memory threshold to 75%
+export WDBX_MAX_MEMORY_PERCENT=75.0
+
+# Check memory usage every 5 refresh cycles
+export WDBX_MEMORY_CHECK_INTERVAL=5
+
+# Disable automatic memory optimization
+export WDBX_MEMORY_OPTIMIZATION_ENABLED=false
+```
+
+## System Diagnostics
+
+WDBX includes comprehensive system diagnostics to monitor and optimize performance:
 
 ```python
-block = Block(id=block_id, timestamp=time.time(), data=data, embeddings=embeddings)
+from wdbx.utils.diagnostics import SystemDiagnostics, start_monitoring
+
+# Create a diagnostics instance (or use the global singleton)
+diagnostics = SystemDiagnostics()
+
+# Register WDBX components for monitoring
+diagnostics.register_component("vector_store", vector_store)
+diagnostics.register_component("block_manager", block_manager)
+diagnostics.register_component("tx_manager", transaction_manager)
+
+# Start automatic monitoring (uses background thread)
+diagnostics.start_monitoring()
+
+# Get current memory usage
+memory_info = diagnostics.get_memory_usage()
+print(f"Current memory: {memory_info['percent']:.1f}% ({memory_info['used'] / 1024**2:.1f} MB)")
+
+# Get system information
+system_info = diagnostics.get_system_info()
+print(f"Platform: {system_info['platform']}")
+print(f"CPU Count: {system_info.get('cpu_count', 'Unknown')}")
+
+# View performance metrics history
+metrics = diagnostics.get_metrics_history()
+print(f"Recorded {len(metrics['memory_usage'])} memory data points")
+
+# Log custom events
+diagnostics.log_event("operation", {
+    "operation": "vector_search",
+    "duration_ms": 156,
+    "results_count": 10
+})
+
+# Optimize memory on demand
+diagnostics.optimize_memory()
+
+# Stop monitoring before exiting
+diagnostics.stop_monitoring()
 ```
 
-- `calculate_hash()`: Calculate the cryptographic hash of the block.
-- `mine_block()`: Mine the block by finding a nonce that produces a hash with the required difficulty.
-- `validate()`: Validate the block's integrity.
-- `serialize()`: Serialize the block to bytes.
-- `deserialize(data)`: Create a Block from serialized bytes.
+The diagnostics system automatically:
+- Tracks memory usage over time
+- Optimizes memory when thresholds are exceeded
+- Collects performance metrics for later analysis
+- Collects timing information for key operations
+- Provides detailed system information for troubleshooting
 
-### PersonaManager Class
+## Database Management
 
-Manages multi-persona interactions:
+WDBX includes built-in database management tools:
 
-```python
-persona_manager = PersonaManager(wdbx)
+```bash
+# Initialize database
+python wdbx_tool.py db init
+
+# Check database status
+python wdbx_tool.py db status
+
+# Backup database
+python wdbx_tool.py db backup --target backup_file.zip
+
+# Restore database
+python wdbx_tool.py db restore --target backup_file.zip
+
+# Clean up and optimize database
+python wdbx_tool.py db cleanup
 ```
 
-- `determine_optimal_persona(user_input, context=None)`: Determine the optimal persona for the user input.
-- `generate_response(user_input, persona_id, context=None)`: Generate a response using the specified persona.
-- `process_user_input(user_input, context=None)`: Process a user input and generate a response.
+## Performance Monitoring
 
-## 🧪 Performance
+Monitor system and WDBX performance metrics:
 
-WDBX is designed for high performance and scalability:
+```bash
+# Collect metrics until interrupted
+python wdbx_tool.py metrics
 
-- **Vector Operations:** Efficiently handle millions of high-dimensional vectors.
-- **Sharding:** Distribute data across multiple shards for horizontal scaling.
-- **Concurrency:** Handle concurrent read/write operations with MVCC.
-- **Optimization:** Automatically use available accelerators (FAISS, JAX, etc.) when available.
+# Collect metrics for a specific duration
+python wdbx_tool.py metrics --duration 3600  # 1 hour
 
-## 📋 Requirements
+# Specify output directory
+python wdbx_tool.py metrics --output-dir ./metrics_output
 
-### Core Requirements
-- Python 3.9 or higher
+# Connect to running WDBX server
+python wdbx_tool.py metrics --server 127.0.0.1:8080
+```
 
-### Optional Dependencies for Enhanced Performance
-- NumPy: For efficient vector operations
-- FAISS: For high-performance vector similarity search
-- aiohttp: For HTTP server functionality
-- scikit-learn: For advanced clustering algorithms
-- JAX: For JIT acceleration in MLIR
+Metrics are saved as CSV and JSON files, and visualizations are generated (if matplotlib is installed).
 
-## 🛠️ Development Status
+## Environment Configuration
 
-The WDBX project is currently in beta, with a fully functional Python implementation available for immediate use alongside ongoing work on the high-performance backend.
+WDBX can be configured using environment variables or a `.env` file:
 
-## 🚶 Roadmap
+```bash
+# Use a specific .env file
+python wdbx_tool.py --env my_custom.env run
+```
 
-- **v1.0 (Current):** Core Python implementation with all features
-- **v1.1:** Enhanced performance with JAX acceleration
-- **v1.2:** Distributed deployment support
-- **v1.3:** Advanced monitoring and observability
-- **v2.0:** Full production hardening with enterprise features
+Key configuration options include:
 
-## 👥 Contributing
+- `WDBX_DATA_DIR`: Database storage location
+- `WDBX_VECTOR_DIMENSION`: Default vector dimension
+- `WDBX_MAX_MEMORY_PERCENT`: Memory threshold for optimization
+- `WDBX_DEFAULT_ML_BACKEND`: ML backend selection (numpy, torch, jax)
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-```WDBX is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full license text.```
-
----
-
-`previous/ongoing completion plan`
-# WDBX Project Completion Plan
-
-## 1. Fix Module Structure
-
-### Issues to Resolve:
-- Fix circular imports between modules
-- Resolve duplicate WDBX class definitions
-- Fix incorrect imports in `__init__.py`
-- Clean up constants vs data structures
-
-### Implementation:
-1. Reorganize `__init__.py` to properly expose the API
-2. Fix imports in all modules
-3. Move WDBX class to a single location
-4. Properly separate constants from data structures
-
-## 2. Fix Dependencies
-
-### Issues to Resolve:
-- Handle optional dependencies properly
-- Implement fallbacks for external libraries
-- Update requirements.txt
-
-### Implementation:
-1. Add try/except blocks for optional dependencies like faiss
-2. Implement fallback mechanisms using pure Python
-3. Update requirements with proper version constraints
-
-## 3. Complete Core Features
-
-### Issues to Resolve:
-- Implement missing features mentioned in README
-- Complete server implementation
-- Add full CLI functionality
-
-### Implementation:
-1. Complete neural backtracking implementation
-2. Finish multi-persona framework
-3. Implement content filtering & bias mitigation
-4. Enhance multi-head attention implementation
-5. Complete HTTP server
-
-## 4. Add Documentation
-
-### Issues to Resolve:
-- Improve API documentation
-- Add usage examples
-- Create clear installation guide
-
-### Implementation:
-1. Add docstrings to all classes and methods
-2. Create detailed API reference
-3. Write step-by-step tutorials
-4. Update README with detailed installation and usage
-
-## 5. Improve Testing
-
-### Issues to Resolve:
-- Fix existing tests
-- Add more test coverage
-- Implement integration tests
-
-### Implementation:
-1. Fix import issues in tests
-2. Add unit tests for all core features
-3. Add integration tests for the full system
-4. Add performance benchmarks
-
-## 6. Optimize Performance
-
-### Issues to Resolve:
-- Optimize vector operations
-- Improve blockchain mining
-- Enhance concurrency
-
-### Implementation:
-1. Optimize vector similarity search
-2. Add caching for frequent operations
-3. Implement more efficient blockchain mining
-4. Enhance MVCC implementation
-
-## 7. Package and Distribution
-
-### Issues to Resolve:
-- Create proper package structure
-- Add setup tools configuration
-- Prepare for PyPI submission
-
-### Implementation:
-1. Finalize package structure
-2. Update setup.py with complete metadata
-3. Create CI/CD pipeline
-4. Prepare documentation for PyPI
+See `.env.template` for all available options.

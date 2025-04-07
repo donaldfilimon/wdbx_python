@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  wdbx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wdbx-dev
+    container_name: wdbx
+    volumes:
+      - .:/app
+      - wdbx-data:/app/wdbx_data
+      - wdbx-visualizations:/app/demo_visualizations
+      - wdbx-models:/app/wdbx_model_cache
+      - wdbx-config:/app/.wdbx
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9090:9090"  # Socket server
+    environment:
+      - PYTHONPATH=/app
+      - WDBX_LOG_LEVEL=INFO
+    command: python run_wdbx.py --interactive
+    networks:
+      - wdbx-network
+    depends_on:
+      - ollama
+
+  # Optional Ollama service for local model inference
+  # Uncomment to enable
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - wdbx-network
+    # Pull common models at startup
+    # command: >
+    #   sh -c "ollama serve &
+    #          sleep 10 &&
+    #          ollama pull llama3 &&
+    #          ollama pull gemma &&
+    #          wait"
+
+networks:
+  wdbx-network:
+    driver: bridge
+
+volumes:
+  wdbx-data:
+    driver: local
+  wdbx-visualizations:
+    driver: local
+  wdbx-models:
+    driver: local
+  wdbx-config:
+    driver: local
+  ollama-data:
+    driver: local
+
+# Usage:
+# Start all services:
+#   docker-compose up -d
+#
+# Start only WDBX without Ollama:
+#   docker-compose up -d wdbx
+#
+# Run in interactive mode:
+#   docker-compose run wdbx python run_wdbx.py --interactive
+#
+# Access bash shell:
+#   docker-compose exec wdbx bash 

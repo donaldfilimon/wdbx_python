@@ -1,0 +1,37 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff black isort autoflake
+        pip install -e ".[dev]"
+    
+    - name: Run integrated linter
+      run: python scripts/integrated_linter.py --verbose
+    
+    - name: Upload linting report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: linting-reports
+        path: linting_reports/
+        retention-days: 7 

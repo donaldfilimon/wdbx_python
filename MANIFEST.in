@@ -1,0 +1,14 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include setup.py
+include requirements.txt
+
+# Include UI files for Streamlit
+recursive-include src/wdbx/ui *.py
+recursive-include docs *.md *.rst *.py *.txt
+prune tests
+prune sample_data
+prune wdbx_data
+prune tmp_data
+global-exclude *.py[cod] __pycache__ *.so .DS_Store 
