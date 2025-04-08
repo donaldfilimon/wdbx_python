@@ -45,7 +45,8 @@ class MVCCTransaction:
             logger.warning(
                 f"Transaction {
                     self.transaction_id} attempted to acquire lock while {
-                    self.status}")
+                    self.status}"
+            )
             return False
         self.locks.add(key)
         return True
@@ -63,7 +64,8 @@ class MVCCTransaction:
             f"Transaction {
                 self.transaction_id} committed after {
                 self.end_time -
-                self.start_time:.3f}s")
+                self.start_time:.3f}s"
+        )
 
     def abort(self) -> None:
         """Mark transaction as aborted and release all locks"""
@@ -74,7 +76,8 @@ class MVCCTransaction:
             f"Transaction {
                 self.transaction_id} aborted after {
                 self.end_time -
-                self.start_time:.3f}s")
+                self.start_time:.3f}s"
+        )
 
     def is_active(self) -> bool:
         """Check if transaction is still active"""
@@ -178,7 +181,8 @@ class MVCCManager:
             if not transaction.is_active():
                 raise ValueError(
                     f"Transaction {transaction_id} is not active (status: {
-                        transaction.status})")
+                        transaction.status})"
+                )
 
             transaction.read(key)
             versions = self.versions.get(key, [])
@@ -187,21 +191,30 @@ class MVCCManager:
             # - Created by a committed transaction before this transaction started, or
             # - Created by this transaction itself
             valid_versions = [
-                (v, val, tid) for v, val, tid in versions if (
-                    v <= transaction.version and (
-                        tid == transaction_id or self.transactions.get(
-                            tid, MVCCTransaction()).is_committed())) or tid == transaction_id]
+                (v, val, tid)
+                for v, val, tid in versions
+                if (
+                    v <= transaction.version
+                    and (
+                        tid == transaction_id
+                        or self.transactions.get(tid, MVCCTransaction()).is_committed()
+                    )
+                )
+                or tid == transaction_id
+            ]
 
             if not valid_versions:
                 logger.debug(
-                    f"Transaction {transaction_id} read None for key {key} (no valid versions)")
+                    f"Transaction {transaction_id} read None for key {key} (no valid versions)"
+                )
                 return None
 
             # Return the most recent valid version
             valid_versions.sort(reverse=True, key=lambda x: x[0])
             logger.debug(
                 f"Transaction {transaction_id} read value for key {key} (version: {
-                    valid_versions[0][0]})")
+                    valid_versions[0][0]})"
+            )
             return valid_versions[0][1]
 
     def write(self, transaction_id: str, key: str, value: Any) -> bool:
@@ -226,13 +239,15 @@ class MVCCManager:
             if not transaction.is_active():
                 raise ValueError(
                     f"Transaction {transaction_id} is not active (status: {
-                        transaction.status})")
+                        transaction.status})"
+                )
 
             # Check if another transaction holds the lock
             if key in self.locks and self.locks[key] != transaction_id:
                 logger.debug(
                     f"Transaction {transaction_id} failed to write to {key}: locked by {
-                        self.locks[key]}")
+                        self.locks[key]}"
+                )
                 return False
 
             # Acquire lock for this key
@@ -247,7 +262,8 @@ class MVCCManager:
             self.versions[key].append((transaction.version, value, transaction_id))
             logger.debug(
                 f"Transaction {transaction_id} wrote value for key {key} (version: {
-                    transaction.version})")
+                    transaction.version})"
+            )
             return True
 
     def commit(self, transaction_id: str) -> bool:
@@ -269,7 +285,8 @@ class MVCCManager:
             if not transaction.is_active():
                 logger.warning(
                     f"Attempt to commit {
-                        transaction.status} transaction: {transaction_id}")
+                        transaction.status} transaction: {transaction_id}"
+                )
                 return False
 
             transaction.commit()
@@ -280,7 +297,8 @@ class MVCCManager:
                     del self.locks[key]
 
             logger.info(
-                f"Transaction {transaction_id} committed: {len(transaction.write_set)} writes, {len(transaction.read_set)} reads")
+                f"Transaction {transaction_id} committed: {len(transaction.write_set)} writes, {len(transaction.read_set)} reads"
+            )
 
             # Automatic cleanup if needed
             self._auto_cleanup()
@@ -305,15 +323,17 @@ class MVCCManager:
             if not transaction.is_active():
                 logger.warning(
                     f"Attempt to abort {
-                        transaction.status} transaction: {transaction_id}")
+                        transaction.status} transaction: {transaction_id}"
+                )
                 return False
 
             transaction.abort()
 
             # Remove versions created by this transaction
             for key in transaction.write_set:
-                self.versions[key] = [(v, val, tid)
-                                      for v, val, tid in self.versions[key] if tid != transaction_id]
+                self.versions[key] = [
+                    (v, val, tid) for v, val, tid in self.versions[key] if tid != transaction_id
+                ]
                 if not self.versions[key]:
                     del self.versions[key]
 
@@ -323,7 +343,8 @@ class MVCCManager:
                     del self.locks[key]
 
             logger.info(
-                f"Transaction {transaction_id} aborted: {len(transaction.write_set)} writes rolled back")
+                f"Transaction {transaction_id} aborted: {len(transaction.write_set)} writes rolled back"
+            )
             return True
 
     def _auto_cleanup(self, cleanup_interval: float = 3600.0) -> None:
@@ -365,10 +386,10 @@ class MVCCManager:
 
             # Clean up transactions table
             old_transactions = [
-                tid for tid,
-                tx in self.transactions.items() if not tx.is_active() and tx.end_time and (
-                    current_time -
-                    tx.end_time > max_age)]
+                tid
+                for tid, tx in self.transactions.items()
+                if not tx.is_active() and tx.end_time and (current_time - tx.end_time > max_age)
+            ]
             for tid in old_transactions:
                 del self.transactions[tid]
 
@@ -381,8 +402,10 @@ class MVCCManager:
 
                 # Find the latest committed version
                 committed_versions = [
-                    v for v in versions if self.transactions.get(
-                        v[2], MVCCTransaction()).is_committed()]
+                    v
+                    for v in versions
+                    if self.transactions.get(v[2], MVCCTransaction()).is_committed()
+                ]
                 if not committed_versions:
                     continue
 
@@ -393,10 +416,11 @@ class MVCCManager:
                 # 2. The latest committed version, or
                 # 3. Created by active transactions
                 new_versions = [
-                    v for v in versions
-                    if v[0] >= min_version or
-                    v == latest_committed or
-                    (v[2] in self.transactions and self.transactions[v[2]].is_active())
+                    v
+                    for v in versions
+                    if v[0] >= min_version
+                    or v == latest_committed
+                    or (v[2] in self.transactions and self.transactions[v[2]].is_active())
                 ]
 
                 removed_count += len(versions) - len(new_versions)
@@ -407,7 +431,8 @@ class MVCCManager:
                     self.versions[key] = new_versions
 
             logger.debug(
-                f"Cleaned up {removed_count} old versions, current keys: {len(self.versions)}")
+                f"Cleaned up {removed_count} old versions, current keys: {len(self.versions)}"
+            )
             return removed_count
 
     def get_stats(self) -> Dict[str, Any]:
@@ -428,10 +453,10 @@ class MVCCManager:
                     "active": active_txns,
                     "committed": committed_txns,
                     "aborted": aborted_txns,
-                    "total": len(self.transactions)
+                    "total": len(self.transactions),
                 },
                 "keys": len(self.versions),
                 "versions": total_versions,
                 "locks": len(self.locks),
-                "last_cleanup": self.last_cleanup_time
+                "last_cleanup": self.last_cleanup_time,
             }

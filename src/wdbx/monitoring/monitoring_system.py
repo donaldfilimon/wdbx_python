@@ -9,6 +9,7 @@ This module provides detailed monitoring of WDBX operations, including:
 - Health checks
 - Log aggregation
 - Alerting
+- ML backend monitoring
 """
 import functools
 import logging
@@ -25,6 +26,18 @@ from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from ..core.constants import logger
 
+# Import ML module components for backend monitoring
+try:
+    from ..ml import JAX_AVAILABLE, TORCH_AVAILABLE, get_ml_backend
+    from ..ml.backend import BackendType
+
+    ML_MONITORING_AVAILABLE = True
+except ImportError:
+    ML_MONITORING_AVAILABLE = False
+    JAX_AVAILABLE = False
+    TORCH_AVAILABLE = False
+    logger.warning("ML module not available. ML monitoring will be disabled.")
+
 # Define Self type for return type annotations
 T = TypeVar("T")
 
@@ -32,6 +45,7 @@ try:
     import prometheus_client
     from prometheus_client import Counter, Gauge, Histogram, Info, Summary
     from prometheus_client import start_http_server as prometheus_start_http_server
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -54,6 +68,7 @@ except ImportError:
 
     def prometheus_start_http_server(*args, **kwargs):
         pass
+
     logging.warning("Prometheus client not available. Metrics will not be exported to Prometheus.")
 
 try:
@@ -61,6 +76,7 @@ try:
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
     OPENTELEMETRY_AVAILABLE = True
 except ImportError:
     OPENTELEMETRY_AVAILABLE = False
@@ -77,13 +93,18 @@ except ImportError:
 
     class OTLPSpanExporter:
         pass
-    trace = type("DummyModule", (), {
-        "get_tracer_provider": lambda: type("DummyProvider", (), {
-            "add_span_processor": lambda x: None
-        })(),
-        "get_current_span": lambda: None,
-        "set_tracer_provider": lambda x: None
-    })
+
+    trace = type(
+        "DummyModule",
+        (),
+        {
+            "get_tracer_provider": lambda: type(
+                "DummyProvider", (), {"add_span_processor": lambda x: None}
+            )(),
+            "get_current_span": lambda: None,
+            "set_tracer_provider": lambda x: None,
+        },
+    )
     logging.warning("OpenTelemetry not available. Distributed tracing will not be available.")
 
 
@@ -93,6 +114,7 @@ METRICS_ENABLED = os.environ.get("WDBX_METRICS_ENABLED", "true").lower() == "tru
 TRACING_ENABLED = os.environ.get("WDBX_TRACING_ENABLED", "true").lower() == "true"
 LOG_SAMPLING_RATE = float(os.environ.get("WDBX_LOG_SAMPLING_RATE", 0.1))
 HEALTH_CHECK_INTERVAL = float(os.environ.get("WDBX_HEALTH_CHECK_INTERVAL", 60.0))
+ML_MONITORING_ENABLED = os.environ.get("WDBX_ML_MONITORING_ENABLED", "true").lower() == "true"
 
 
 class MetricsRegistry:
@@ -129,8 +151,9 @@ class MetricsRegistry:
             logger.error(f"Failed to start Prometheus metrics server: {e}")
             self.enable_prometheus = False
 
-    def counter(self, name: str, description: str,
-                labels: Optional[List[str]] = None) -> "PrometheusCounter":
+    def counter(
+        self, name: str, description: str, labels: Optional[List[str]] = None
+    ) -> "PrometheusCounter":
         """
         Create or get a counter.
 
@@ -146,11 +169,7 @@ class MetricsRegistry:
             key = f"counter:{name}"
             if key not in self.metrics:
                 if self.enable_prometheus:
-                    counter = Counter(
-                        f"{self.name}_{name}",
-                        description,
-                        labels or []
-                    )
+                    counter = Counter(f"{self.name}_{name}", description, labels or [])
                 else:
                     counter = SimpleCounter(name, description, labels or [])
 
@@ -160,8 +179,9 @@ class MetricsRegistry:
 
             return PrometheusCounter(self, name, labels or [])
 
-    def gauge(self, name: str, description: str,
-              labels: Optional[List[str]] = None) -> "PrometheusGauge":
+    def gauge(
+        self, name: str, description: str, labels: Optional[List[str]] = None
+    ) -> "PrometheusGauge":
         """
         Create or get a gauge.
 
@@ -177,11 +197,7 @@ class MetricsRegistry:
             key = f"gauge:{name}"
             if key not in self.metrics:
                 if self.enable_prometheus:
-                    gauge = Gauge(
-                        f"{self.name}_{name}",
-                        description,
-                        labels or []
-                    )
+                    gauge = Gauge(f"{self.name}_{name}", description, labels or [])
                 else:
                     gauge = SimpleGauge(name, description, labels or [])
 
@@ -191,8 +207,13 @@ class MetricsRegistry:
 
             return PrometheusGauge(self, name, labels or [])
 
-    def histogram(self, name: str, description: str, labels: Optional[List[str]] = None,
-                  buckets: Optional[List[float]] = None) -> "PrometheusHistogram":
+    def histogram(
+        self,
+        name: str,
+        description: str,
+        labels: Optional[List[str]] = None,
+        buckets: Optional[List[float]] = None,
+    ) -> "PrometheusHistogram":
         """
         Create or get a histogram.
 
@@ -214,10 +235,7 @@ class MetricsRegistry:
                         kwargs["buckets"] = buckets
 
                     histogram = Histogram(
-                        f"{self.name}_{name}",
-                        description,
-                        labels or [],
-                        **kwargs
+                        f"{self.name}_{name}", description, labels or [], **kwargs
                     )
                 else:
                     histogram = SimpleHistogram(name, description, labels or [], buckets)
@@ -228,8 +246,9 @@ class MetricsRegistry:
 
             return PrometheusHistogram(self, name, labels or [])
 
-    def summary(self, name: str, description: str,
-                labels: Optional[List[str]] = None) -> "PrometheusSummary":
+    def summary(
+        self, name: str, description: str, labels: Optional[List[str]] = None
+    ) -> "PrometheusSummary":
         """
         Create or get a summary.
 
@@ -245,11 +264,7 @@ class MetricsRegistry:
             key = f"summary:{name}"
             if key not in self.metrics:
                 if self.enable_prometheus:
-                    summary = Summary(
-                        f"{self.name}_{name}",
-                        description,
-                        labels or []
-                    )
+                    summary = Summary(f"{self.name}_{name}", description, labels or [])
                 else:
                     summary = SimpleSummary(name, description, labels or [])
 
@@ -274,10 +289,7 @@ class MetricsRegistry:
             key = f"info:{name}"
             if key not in self.metrics:
                 if self.enable_prometheus:
-                    info = Info(
-                        f"{self.name}_{name}",
-                        description
-                    )
+                    info = Info(f"{self.name}_{name}", description)
                 else:
                     info = SimpleInfo(name, description)
 
@@ -310,13 +322,7 @@ class MetricsRegistry:
             Dictionary of metric values, grouped by type
         """
         with self.lock:
-            result = {
-                "counters": {},
-                "gauges": {},
-                "histograms": {},
-                "summaries": {},
-                "infos": {}
-            }
+            result = {"counters": {}, "gauges": {}, "histograms": {}, "summaries": {}, "infos": {}}
 
             for key, value in self.values.items():
                 metric_type, name = key.split(":", 1)
@@ -361,17 +367,16 @@ class PrometheusCounter:
                     metric.labels(*label_values).inc(value)
                 else:
                     metric.inc(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                if label_str not in self.registry.values[self.key]:
+                    self.registry.values[self.key][label_str] = 0
+                self.registry.values[self.key][label_str] += value
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    if label_str not in self.registry.values[self.key]:
-                        self.registry.values[self.key][label_str] = 0
-                    self.registry.values[self.key][label_str] += value
-                else:
-                    if "value" not in self.registry.values[self.key]:
-                        self.registry.values[self.key]["value"] = 0
-                    self.registry.values[self.key]["value"] += value
+                if "value" not in self.registry.values[self.key]:
+                    self.registry.values[self.key]["value"] = 0
+                self.registry.values[self.key]["value"] += value
 
             self.registry.last_update[self.key] = time.time()
 
@@ -402,13 +407,12 @@ class PrometheusGauge:
                     metric.labels(*label_values).set(value)
                 else:
                     metric.set(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                self.registry.values[self.key][label_str] = value
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    self.registry.values[self.key][label_str] = value
-                else:
-                    self.registry.values[self.key]["value"] = value
+                self.registry.values[self.key]["value"] = value
 
             self.registry.last_update[self.key] = time.time()
 
@@ -428,17 +432,16 @@ class PrometheusGauge:
                     metric.labels(*label_values).inc(value)
                 else:
                     metric.inc(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                if label_str not in self.registry.values[self.key]:
+                    self.registry.values[self.key][label_str] = 0
+                self.registry.values[self.key][label_str] += value
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    if label_str not in self.registry.values[self.key]:
-                        self.registry.values[self.key][label_str] = 0
-                    self.registry.values[self.key][label_str] += value
-                else:
-                    if "value" not in self.registry.values[self.key]:
-                        self.registry.values[self.key]["value"] = 0
-                    self.registry.values[self.key]["value"] += value
+                if "value" not in self.registry.values[self.key]:
+                    self.registry.values[self.key]["value"] = 0
+                self.registry.values[self.key]["value"] += value
 
             self.registry.last_update[self.key] = time.time()
 
@@ -458,17 +461,16 @@ class PrometheusGauge:
                     metric.labels(*label_values).dec(value)
                 else:
                     metric.dec(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                if label_str not in self.registry.values[self.key]:
+                    self.registry.values[self.key][label_str] = 0
+                self.registry.values[self.key][label_str] -= value
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    if label_str not in self.registry.values[self.key]:
-                        self.registry.values[self.key][label_str] = 0
-                    self.registry.values[self.key][label_str] -= value
-                else:
-                    if "value" not in self.registry.values[self.key]:
-                        self.registry.values[self.key]["value"] = 0
-                    self.registry.values[self.key]["value"] -= value
+                if "value" not in self.registry.values[self.key]:
+                    self.registry.values[self.key]["value"] = 0
+                self.registry.values[self.key]["value"] -= value
 
             self.registry.last_update[self.key] = time.time()
 
@@ -512,17 +514,16 @@ class PrometheusHistogram:
                     metric.labels(*label_values).observe(value)
                 else:
                     metric.observe(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                if label_str not in self.registry.values[self.key]:
+                    self.registry.values[self.key][label_str] = []
+                self.registry.values[self.key][label_str].append(value)
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    if label_str not in self.registry.values[self.key]:
-                        self.registry.values[self.key][label_str] = []
-                    self.registry.values[self.key][label_str].append(value)
-                else:
-                    if "values" not in self.registry.values[self.key]:
-                        self.registry.values[self.key]["values"] = []
-                    self.registry.values[self.key]["values"].append(value)
+                if "values" not in self.registry.values[self.key]:
+                    self.registry.values[self.key]["values"] = []
+                self.registry.values[self.key]["values"].append(value)
 
             self.registry.last_update[self.key] = time.time()
 
@@ -567,17 +568,16 @@ class PrometheusSummary:
                     metric.labels(*label_values).observe(value)
                 else:
                     metric.observe(value)
+            # Update our internal tracking
+            elif self.labels:
+                label_str = ",".join(f"{k}={v}" for k, v in labels.items())
+                if label_str not in self.registry.values[self.key]:
+                    self.registry.values[self.key][label_str] = []
+                self.registry.values[self.key][label_str].append(value)
             else:
-                # Update our internal tracking
-                if self.labels:
-                    label_str = ",".join(f"{k}={v}" for k, v in labels.items())
-                    if label_str not in self.registry.values[self.key]:
-                        self.registry.values[self.key][label_str] = []
-                    self.registry.values[self.key][label_str].append(value)
-                else:
-                    if "values" not in self.registry.values[self.key]:
-                        self.registry.values[self.key]["values"] = []
-                    self.registry.values[self.key]["values"].append(value)
+                if "values" not in self.registry.values[self.key]:
+                    self.registry.values[self.key]["values"] = []
+                self.registry.values[self.key]["values"].append(value)
 
             self.registry.last_update[self.key] = time.time()
 
@@ -758,11 +758,9 @@ class SimpleGauge:
 class SimpleHistogram:
     """Simple implementation of a histogram."""
 
-    def __init__(self,
-                 name: str,
-                 description: str,
-                 labels: List[str],
-                 buckets: Optional[List[float]] = None):
+    def __init__(
+        self, name: str, description: str, labels: List[str], buckets: Optional[List[float]] = None
+    ):
         self.name = name
         self.description = description
         self._labels = labels
@@ -905,17 +903,13 @@ class TracingManager:
 
             # Set up a console exporter
             console_exporter = ConsoleSpanExporter()
-            trace.get_tracer_provider().add_span_processor(
-                SimpleSpanProcessor(console_exporter)
-            )
+            trace.get_tracer_provider().add_span_processor(SimpleSpanProcessor(console_exporter))
 
             # Set up an OTLP exporter if configured
             otlp_endpoint = os.environ.get("WDBX_OTLP_ENDPOINT")
             if otlp_endpoint:
                 otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
-                trace.get_tracer_provider().add_span_processor(
-                    SimpleSpanProcessor(otlp_exporter)
-                )
+                trace.get_tracer_provider().add_span_processor(SimpleSpanProcessor(otlp_exporter))
 
             # Get a tracer
             self.tracer = trace.get_tracer(self.service_name)
@@ -936,8 +930,13 @@ class TracingManager:
 
         return trace.get_current_span()
 
-    def start_span(self, name: str, context: Optional[Any] = None,
-                   kind: Optional[Any] = None, attributes: Optional[Dict[str, Any]] = None) -> Any:
+    def start_span(
+        self,
+        name: str,
+        context: Optional[Any] = None,
+        kind: Optional[Any] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         """
         Start a new span.
 
@@ -979,8 +978,9 @@ class TracingManager:
         with self.tracer.start_as_current_span(name, attributes=attributes or {}) as span:
             yield span
 
-    def trace_function(self, name: Optional[str] = None,
-                       attributes: Optional[Dict[str, Any]] = None):
+    def trace_function(
+        self, name: Optional[str] = None, attributes: Optional[Dict[str, Any]] = None
+    ):
         """
         Decorator for tracing a function.
 
@@ -991,13 +991,16 @@ class TracingManager:
         Returns:
             Decorator function
         """
+
         def decorator(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 span_name = name or func.__qualname__
                 with self.trace(span_name, attributes or {}):
                     return func(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
 
@@ -1161,6 +1164,7 @@ class LogCollector:
         Returns:
             Configured log handler
         """
+
         class SamplingHandler(logging.Handler):
             def __init__(self, collector):
                 super().__init__()
@@ -1171,8 +1175,7 @@ class LogCollector:
 
         handler = SamplingHandler(self)
         formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
         handler.setFormatter(formatter)
 
@@ -1197,38 +1200,51 @@ class LogCollector:
 
         # Add to queue, dropping oldest if full
         try:
-            self.logs.put_nowait({
-                "timestamp": record.created,
-                "level": record.levelname,
-                "logger": record.name,
-                "message": message,
-                "exception": None if not record.exc_info else {
-                    "type": record.exc_info[0].__name__,
-                    "value": str(record.exc_info[1]),
-                    "traceback": traceback.format_exception(*record.exc_info)
+            self.logs.put_nowait(
+                {
+                    "timestamp": record.created,
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": message,
+                    "exception": (
+                        None
+                        if not record.exc_info
+                        else {
+                            "type": record.exc_info[0].__name__,
+                            "value": str(record.exc_info[1]),
+                            "traceback": traceback.format_exception(*record.exc_info),
+                        }
+                    ),
                 }
-            })
+            )
         except queue.Full:
             try:
                 # Remove oldest log
                 self.logs.get_nowait()
                 # Add new log
-                self.logs.put_nowait({
-                    "timestamp": record.created,
-                    "level": record.levelname,
-                    "logger": record.name,
-                    "message": message,
-                    "exception": None if not record.exc_info else {
-                        "type": record.exc_info[0].__name__,
-                        "value": str(record.exc_info[1]),
-                        "traceback": traceback.format_exception(*record.exc_info)
+                self.logs.put_nowait(
+                    {
+                        "timestamp": record.created,
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": message,
+                        "exception": (
+                            None
+                            if not record.exc_info
+                            else {
+                                "type": record.exc_info[0].__name__,
+                                "value": str(record.exc_info[1]),
+                                "traceback": traceback.format_exception(*record.exc_info),
+                            }
+                        ),
                     }
-                })
+                )
             except Exception:
                 pass  # Give up if we can't add the log
 
-    def get_logs(self, count: int = 100, level: Optional[str] = None,
-                 logger_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_logs(
+        self, count: int = 100, level: Optional[str] = None, logger_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get collected logs.
 
@@ -1256,6 +1272,240 @@ class LogCollector:
         return all_logs[:count]
 
 
+class MLBackendMonitor:
+    """Monitor for ML backend operations and performance metrics."""
+
+    def __init__(self, metrics_registry: MetricsRegistry):
+        """
+        Initialize the ML backend monitor.
+
+        Args:
+            metrics_registry: Metrics registry to use for reporting
+        """
+        self.metrics = metrics_registry
+        self.enabled = ML_MONITORING_AVAILABLE and ML_MONITORING_ENABLED
+
+        if not self.enabled:
+            logger.warning(
+                "ML backend monitoring is disabled. Enable by installing ML dependencies."
+            )
+            return
+
+        # Initialize ML backend
+        self.ml_backend = get_ml_backend()
+        self.backend_type = self.ml_backend.selected_backend
+
+        # Set up metrics
+        self.op_counter = self.metrics.counter(
+            "ml_operations_total", "Total number of ML operations", ["backend", "operation_type"]
+        )
+
+        self.op_latency = self.metrics.histogram(
+            "ml_operation_latency_seconds",
+            "Latency of ML operations",
+            ["backend", "operation_type"],
+            buckets=[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+        )
+
+        self.mem_usage = self.metrics.gauge(
+            "ml_memory_usage_bytes", "Memory usage of ML operations", ["backend", "device"]
+        )
+
+        self.conversion_counter = self.metrics.counter(
+            "ml_tensor_conversions_total",
+            "Total number of tensor conversions",
+            ["source_backend", "target_backend"],
+        )
+
+        # Initialize backend-specific monitoring
+        self._init_backend_monitoring()
+
+        logger.info(f"ML backend monitoring initialized for backend: {self.backend_type}")
+
+    def _init_backend_monitoring(self) -> None:
+        """Initialize backend-specific monitoring based on available backends."""
+        if not self.enabled:
+            return
+
+        # Track available accelerators
+        if self.backend_type == "jax" and JAX_AVAILABLE:
+            try:
+                import jax
+
+                device_count = len(jax.devices())
+                device_type = str(jax.devices()[0].device_kind) if device_count > 0 else "unknown"
+
+                self.metrics.gauge(
+                    "ml_available_devices",
+                    "Number of available ML accelerator devices",
+                    ["backend", "device_type"],
+                ).set(device_count, backend="jax", device_type=device_type)
+
+                logger.info(f"JAX monitoring initialized with {device_count} {device_type} devices")
+            except Exception as e:
+                logger.warning(f"Failed to initialize JAX monitoring: {e}")
+
+        elif self.backend_type == "pytorch" and TORCH_AVAILABLE:
+            try:
+                import torch
+
+                gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+
+                self.metrics.gauge(
+                    "ml_available_devices",
+                    "Number of available ML accelerator devices",
+                    ["backend", "device_type"],
+                ).set(gpu_count, backend="pytorch", device_type="GPU")
+
+                # Check for MPS (Apple Silicon)
+                has_mps = hasattr(torch, "mps") and torch.backends.mps.is_available()
+                if has_mps:
+                    self.metrics.gauge(
+                        "ml_available_devices",
+                        "Number of available ML accelerator devices",
+                        ["backend", "device_type"],
+                    ).set(1, backend="pytorch", device_type="MPS")
+
+                logger.info(
+                    f"PyTorch monitoring initialized with {gpu_count} GPUs"
+                    + (", MPS available" if has_mps else "")
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize PyTorch monitoring: {e}")
+
+    def record_operation(
+        self, operation_type: str, duration: float, backend: Optional[str] = None
+    ) -> None:
+        """
+        Record an ML operation.
+
+        Args:
+            operation_type: Type of operation (e.g., 'similarity', 'normalize', 'batch_process')
+            duration: Duration of the operation in seconds
+            backend: Optional backend override, defaults to the current backend
+        """
+        if not self.enabled:
+            return
+
+        used_backend = backend or self.backend_type
+
+        # Record metrics
+        self.op_counter.inc(1, backend=used_backend, operation_type=operation_type)
+        self.op_latency.observe(duration, backend=used_backend, operation_type=operation_type)
+
+    def record_tensor_conversion(self, source_backend: str, target_backend: str) -> None:
+        """
+        Record a tensor conversion operation.
+
+        Args:
+            source_backend: Source backend name
+            target_backend: Target backend name
+        """
+        if not self.enabled:
+            return
+
+        self.conversion_counter.inc(1, source_backend=source_backend, target_backend=target_backend)
+
+    def update_memory_usage(self) -> None:
+        """Update memory usage metrics for the current backend."""
+        if not self.enabled:
+            return
+
+        # Update backend-specific memory metrics
+        if self.backend_type == "jax" and JAX_AVAILABLE:
+            try:
+                import jax
+
+                for i, device in enumerate(jax.devices()):
+                    try:
+                        # This is an approximation as JAX doesn't provide direct memory usage
+                        memory_info = jax.device_get(jax.device_put(0, device))
+                        # Use device bus memory if available
+                        if hasattr(device, "memory_stats") and callable(device.memory_stats):
+                            stats = device.memory_stats()
+                            if "bytes_in_use" in stats:
+                                self.mem_usage.set(
+                                    stats["bytes_in_use"],
+                                    backend="jax",
+                                    device=f"{device.device_kind}:{i}",
+                                )
+                    except Exception as e:
+                        logger.debug(f"Failed to get JAX device memory for device {i}: {e}")
+            except Exception as e:
+                logger.debug(f"Failed to update JAX memory usage: {e}")
+
+        elif self.backend_type == "pytorch" and TORCH_AVAILABLE:
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    for i in range(torch.cuda.device_count()):
+                        try:
+                            # Get CUDA memory statistics
+                            allocated = torch.cuda.memory_allocated(i)
+                            self.mem_usage.set(allocated, backend="pytorch", device=f"cuda:{i}")
+                        except Exception as e:
+                            logger.debug(f"Failed to get CUDA memory for device {i}: {e}")
+
+                # Check for MPS (Apple Silicon)
+                if hasattr(torch, "mps") and torch.backends.mps.is_available():
+                    try:
+                        # MPS doesn't have direct memory stats, use a placeholder or estimated value
+                        self.mem_usage.set(
+                            0,  # Placeholder, MPS doesn't expose memory stats directly
+                            backend="pytorch",
+                            device="mps:0",
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update MPS memory usage: {e}")
+            except Exception as e:
+                logger.debug(f"Failed to update PyTorch memory usage: {e}")
+
+    def check_backend_health(self) -> bool:
+        """
+        Check if the ML backend is healthy.
+
+        Returns:
+            True if the ML backend is healthy, False otherwise
+        """
+        if not self.enabled:
+            return True
+
+        try:
+            # Perform a simple operation to verify the backend works
+            import numpy as np
+
+            test_vector = np.random.randn(10).astype(np.float32)
+
+            # Test the backend with a simple operation
+            _ = self.ml_backend.normalize(test_vector)
+
+            # If using JAX, test JIT compilation
+            if self.backend_type == "jax" and JAX_AVAILABLE:
+                import jax
+                import jax.numpy as jnp
+
+                @jax.jit
+                def test_jit(x):
+                    return jnp.sum(x)
+
+                _ = test_jit(jnp.array(test_vector))
+
+            # If using PyTorch, test CUDA if available
+            elif self.backend_type == "pytorch" and TORCH_AVAILABLE:
+                import torch
+
+                if torch.cuda.is_available():
+                    device = torch.device("cuda")
+                    x = torch.tensor(test_vector, device=device)
+                    _ = x + x
+
+            return True
+        except Exception as e:
+            logger.error(f"ML backend health check failed: {e}")
+            return False
+
+
 class MonitoringSystem:
     """
     Complete monitoring system for WDBX.
@@ -1274,6 +1524,13 @@ class MonitoringSystem:
         self.health = HealthChecker()
         self.logs = LogCollector()
 
+        # Initialize ML backend monitoring if enabled
+        self.ml_monitor = (
+            MLBackendMonitor(self.metrics)
+            if ML_MONITORING_ENABLED and ML_MONITORING_AVAILABLE
+            else None
+        )
+
         # Initialize common metrics
         self._init_metrics()
 
@@ -1286,12 +1543,14 @@ class MonitoringSystem:
         """Initialize common metrics."""
         # System metrics
         self.system_info = self.metrics.info("system", "System information")
-        self.system_info.info({
-            "service_name": self.service_name,
-            "hostname": socket.gethostname(),
-            "python_version": ".".join(map(str, sys.version_info[:3])),
-            "pid": str(os.getpid())
-        })
+        self.system_info.info(
+            {
+                "service_name": self.service_name,
+                "hostname": socket.gethostname(),
+                "python_version": ".".join(map(str, sys.version_info[:3])),
+                "pid": str(os.getpid()),
+            }
+        )
 
         self.uptime = self.metrics.gauge("uptime_seconds", "Service uptime in seconds")
         self.uptime.set(0)  # Will be updated periodically
@@ -1311,8 +1570,12 @@ class MonitoringSystem:
                 # Update uptime
                 self.uptime.set(time.time() - self.start_time)
 
-                # Update process metrics (CPU, memory, etc.)
+                # Update process metrics
                 self._update_process_metrics()
+
+                # Update ML backend metrics if available
+                if self.ml_monitor is not None:
+                    self.ml_monitor.update_memory_usage()
 
             except Exception as e:
                 logger.error(f"Error updating metrics: {e}")
@@ -1324,6 +1587,7 @@ class MonitoringSystem:
         """Update process metrics (CPU, memory, etc.)."""
         try:
             import psutil
+
             process = psutil.Process(os.getpid())
 
             # CPU usage
@@ -1333,12 +1597,14 @@ class MonitoringSystem:
             # Memory usage
             memory_info = process.memory_info()
             memory_metric = self.metrics.gauge(
-                "process_memory_bytes", "Process memory usage in bytes")
+                "process_memory_bytes", "Process memory usage in bytes"
+            )
             memory_metric.set(memory_info.rss)
 
             # Open file descriptors
             open_files_metric = self.metrics.gauge(
-                "process_open_fds", "Number of open file descriptors")
+                "process_open_fds", "Number of open file descriptors"
+            )
             open_files_metric.set(len(process.open_files()))
 
             # Threads
@@ -1378,8 +1644,9 @@ class MonitoringSystem:
         """
         return self.health.is_healthy()
 
-    def track_operation(self, operation_type: str, name: str,
-                        attributes: Optional[Dict[str, Any]] = None):
+    def track_operation(
+        self, operation_type: str, name: str, attributes: Optional[Dict[str, Any]] = None
+    ):
         """
         Context manager for tracking an operation.
 
@@ -1389,6 +1656,20 @@ class MonitoringSystem:
             attributes: Additional attributes for the operation
         """
         return OperationTracker(self, operation_type, name, attributes)
+
+    def track_ml_operation(self, operation_type: str, name: str, backend: Optional[str] = None):
+        """
+        Track an ML operation with timing and tracing.
+
+        Args:
+            operation_type: Type of ML operation (e.g., similarity, vector_search)
+            name: Name of the specific operation
+            backend: Optional backend name override
+
+        Returns:
+            OperationTracker context manager
+        """
+        return MLOperationTracker(self, operation_type, name, backend=backend)
 
     def close(self):
         """Close the monitoring system."""
@@ -1403,8 +1684,13 @@ class OperationTracker:
     Context manager for tracking operations.
     """
 
-    def __init__(self, monitoring: MonitoringSystem, operation_type: str, name: str,
-                 attributes: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        monitoring: MonitoringSystem,
+        operation_type: str,
+        name: str,
+        attributes: Optional[Dict[str, Any]] = None,
+    ):
         """
         Initialize the operation tracker.
 
@@ -1423,26 +1709,25 @@ class OperationTracker:
         self.counter = self.monitoring.metrics.counter(
             f"{operation_type}_operations_total",
             f"Total number of {operation_type} operations",
-            ["name", "status"]
+            ["name", "status"],
         )
 
         self.latency = self.monitoring.metrics.histogram(
             f"{operation_type}_operation_duration_seconds",
             f"Duration of {operation_type} operations in seconds",
-            ["name", "status"]
+            ["name", "status"],
         )
 
         self.in_progress = self.monitoring.metrics.gauge(
             f"{operation_type}_operations_in_progress",
             f"Number of {operation_type} operations in progress",
-            ["name"]
+            ["name"],
         )
 
     def __enter__(self):
         # Start span
         self.span = self.monitoring.tracing.start_span(
-            f"{self.operation_type}:{self.name}",
-            attributes=self.attributes
+            f"{self.operation_type}:{self.name}", attributes=self.attributes
         )
 
         # Update in-progress metric
@@ -1479,6 +1764,94 @@ class OperationTracker:
             self.span.end()
 
 
+class MLOperationTracker:
+    """Context manager for tracking ML operations with performance metrics."""
+
+    def __init__(
+        self,
+        monitoring: MonitoringSystem,
+        operation_type: str,
+        name: str,
+        backend: Optional[str] = None,
+    ):
+        """
+        Initialize the ML operation tracker.
+
+        Args:
+            monitoring: MonitoringSystem instance
+            operation_type: Type of ML operation
+            name: Name of the operation
+            backend: Optional backend name override
+        """
+        self.monitoring = monitoring
+        self.operation_type = operation_type
+        self.name = name
+        self.backend = backend
+
+        if self.monitoring.ml_monitor is not None and backend is None:
+            self.backend = self.monitoring.ml_monitor.backend_type
+
+        self.start_time = None
+        self.span = None
+
+    def __enter__(self):
+        """Start tracking the operation."""
+        self.start_time = time.time()
+
+        # Start tracing span if tracing is enabled
+        if self.monitoring.tracing:
+            attributes = {
+                "operation.type": self.operation_type,
+                "operation.name": self.name,
+            }
+
+            if self.backend:
+                attributes["ml.backend"] = self.backend
+
+            self.span = self.monitoring.tracing.start_span(
+                f"ml.{self.operation_type}.{self.name}", attributes=attributes
+            )
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """End tracking and record metrics."""
+        # Calculate duration
+        duration = time.time() - self.start_time if self.start_time else 0
+
+        # Record basic operation metrics
+        self.monitoring.operation_counter.inc(1, type=self.operation_type, name=self.name)
+        self.monitoring.operation_latency.observe(
+            duration, type=self.operation_type, name=self.name
+        )
+
+        # Record ML-specific metrics if available
+        if self.monitoring.ml_monitor is not None:
+            self.monitoring.ml_monitor.record_operation(
+                self.operation_type, duration, backend=self.backend
+            )
+
+            # Record ML-specific metrics directly on monitoring system
+            self.monitoring.ml_operation_counter.inc(
+                1, operation_type=self.operation_type, backend=self.backend or "unknown"
+            )
+
+            self.monitoring.ml_operation_latency.observe(
+                duration, operation_type=self.operation_type, backend=self.backend or "unknown"
+            )
+
+        # Record error if applicable
+        if exc_type is not None:
+            self.monitoring.operation_errors.inc(1, type=self.operation_type, name=self.name)
+            if self.span:
+                self.span.record_exception(exc_val)
+
+        # End tracing span
+        if self.span:
+            if hasattr(self.span, "end"):
+                self.span.end()
+
+
 def init_monitoring(app, service_name: str = "wdbx") -> MonitoringSystem:
     """
     Initialize monitoring for a Flask application.
@@ -1506,51 +1879,58 @@ def init_monitoring(app, service_name: str = "wdbx") -> MonitoringSystem:
                 import io
 
                 from flask import Response
+
                 output = io.StringIO()
                 prometheus_client.write_to_textfile(output, prometheus_client.REGISTRY)
                 return Response(output.getvalue(), mimetype="text/plain")
 
             # Otherwise, return our own metrics
             from flask import jsonify
+
             return jsonify(monitoring.metrics.get_all_metrics())
 
         @app.route("/health", methods=["GET"])
         def get_health():
             """Check health status."""
             from flask import jsonify
+
             health_status = monitoring.check_health()
             all_healthy = all(health_status.values())
-            return jsonify({
-                "status": "healthy" if all_healthy else "unhealthy",
-                "checks": health_status,
-                "timestamp": time.time()
-            }), 200 if all_healthy else 503
+            return jsonify(
+                {
+                    "status": "healthy" if all_healthy else "unhealthy",
+                    "checks": health_status,
+                    "timestamp": time.time(),
+                }
+            ), (200 if all_healthy else 503)
 
         @app.route("/health/live", methods=["GET"])
         def get_liveness():
             """Liveness probe for Kubernetes."""
             from flask import jsonify
-            return jsonify({
-                "status": "alive",
-                "timestamp": time.time()
-            })
+
+            return jsonify({"status": "alive", "timestamp": time.time()})
 
         @app.route("/health/ready", methods=["GET"])
         def get_readiness():
             """Readiness probe for Kubernetes."""
             from flask import jsonify
+
             health_status = monitoring.check_health()
             all_healthy = all(health_status.values())
-            return jsonify({
-                "status": "ready" if all_healthy else "not ready",
-                "checks": health_status,
-                "timestamp": time.time()
-            }), 200 if all_healthy else 503
+            return jsonify(
+                {
+                    "status": "ready" if all_healthy else "not ready",
+                    "checks": health_status,
+                    "timestamp": time.time(),
+                }
+            ), (200 if all_healthy else 503)
 
         @app.route("/logs", methods=["GET"])
         def get_logs():
             """Get recent logs."""
             from flask import jsonify, request
+
             count = request.args.get("count", 100, type=int)
             level = request.args.get("level")
             logger_name = request.args.get("logger")
@@ -1573,8 +1953,8 @@ def init_monitoring(app, service_name: str = "wdbx") -> MonitoringSystem:
                     "http.method": request.method,
                     "http.url": request.url,
                     "http.path": request.path,
-                    "http.remote_addr": request.remote_addr
-                }
+                    "http.remote_addr": request.remote_addr,
+                },
             )
             g.request_tracker.__enter__()
 
@@ -1595,6 +1975,7 @@ def init_monitoring(app, service_name: str = "wdbx") -> MonitoringSystem:
                 g.request_tracker.__exit__(*exc_info)
 
             return response
+
     except Exception as e:
         logger.error(f"Error setting up Flask monitoring routes: {e}")
 

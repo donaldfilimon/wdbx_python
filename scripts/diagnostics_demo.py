@@ -10,7 +10,9 @@ from wdbx.utils.diagnostics import (
 )
 
 # Configure basic logging to see output
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("diagnostics_demo")
 
 
@@ -62,4 +64,4 @@ if __name__ == "__main__":
     stop_monitoring()
     logger.info("System monitoring stopped.")
 
-    logger.info("Diagnostics demo finished.") 
+    logger.info("Diagnostics demo finished.")

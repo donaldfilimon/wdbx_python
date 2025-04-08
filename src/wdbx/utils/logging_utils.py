@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import Enum
 from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Set, Union
 
 # Avoid circular imports - we'll load config lazily
 # from ..config.config_manager import get_config
@@ -27,21 +27,21 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, cast
 
 class LogLevel(Enum):
     """Log levels for WDBX logging."""
-    
+
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARNING = logging.WARNING
     ERROR = logging.ERROR
     CRITICAL = logging.CRITICAL
-    
+
     @classmethod
-    def from_string(cls, level_str: str) -> 'LogLevel':
+    def from_string(cls, level_str: str) -> "LogLevel":
         """
         Convert a string to a LogLevel.
-        
+
         Args:
             level_str: String representation of log level
-            
+
         Returns:
             LogLevel enum value
         """
@@ -54,7 +54,7 @@ class LogLevel(Enum):
 
 class LogFormat(Enum):
     """Log format options for WDBX logging."""
-    
+
     TEXT = "text"
     JSON = "json"
     COLOR = "color"
@@ -64,7 +64,7 @@ class LogFormat(Enum):
 class LogContext:
     """
     Context information for a log entry.
-    
+
     Attributes:
         request_id: Identifier for the current request
         user_id: Identifier for the current user
@@ -73,7 +73,7 @@ class LogContext:
         tags: List of tags for categorizing logs
         extra: Additional context specific to the log entry
     """
-    
+
     request_id: Optional[str] = None
     user_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -89,7 +89,7 @@ _log_context = threading.local()
 def get_log_context() -> LogContext:
     """
     Get the current log context.
-        
+
     Returns:
         Current log context for this thread
     """
@@ -101,7 +101,7 @@ def get_log_context() -> LogContext:
 def set_log_context(context: LogContext) -> None:
     """
     Set the current log context.
-    
+
     Args:
         context: Log context to set
     """
@@ -111,7 +111,7 @@ def set_log_context(context: LogContext) -> None:
 def update_log_context(**kwargs) -> None:
     """
     Update the current log context with new values.
-    
+
     Args:
         **kwargs: Key-value pairs to update in the context
     """
@@ -133,7 +133,7 @@ def clear_log_context() -> None:
 def log_context(**kwargs) -> None:
     """
     Context manager for temporarily setting log context.
-    
+
     Args:
         **kwargs: Key-value pairs to update in the context
     """
@@ -144,15 +144,15 @@ def log_context(**kwargs) -> None:
         session_id=old_context.session_id,
         component=old_context.component,
         tags=old_context.tags.copy(),
-        extra=old_context.extra.copy()
+        extra=old_context.extra.copy(),
     )
-    
+
     for key, value in kwargs.items():
         if hasattr(new_context, key):
             setattr(new_context, key, value)
         else:
             new_context.extra[key] = value
-    
+
     set_log_context(new_context)
     try:
         yield
@@ -162,24 +162,24 @@ def log_context(**kwargs) -> None:
 
 class JSONFormatter(logging.Formatter):
     """Formatter that outputs JSON strings for logging."""
-    
+
     def __init__(self, include_context: bool = True):
         """
         Initialize a JSONFormatter.
-        
+
         Args:
             include_context: Whether to include context in log entries
         """
         super().__init__()
         self.include_context = include_context
-    
+
     def _serialize(self, obj: Any) -> Any:
         """
         Serialize an object for JSON logging.
-        
+
         Args:
             obj: Object to serialize
-            
+
         Returns:
             JSON-serializable representation of the object
         """
@@ -193,7 +193,7 @@ class JSONFormatter(logging.Formatter):
             return {
                 "type": obj.__class__.__name__,
                 "message": str(obj),
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc(),
             }
         if isinstance(obj, dict):
             return {k: self._serialize(v) for k, v in obj.items()}
@@ -202,14 +202,14 @@ class JSONFormatter(logging.Formatter):
         if hasattr(obj, "__dict__"):
             return self._serialize(obj.__dict__)
         return obj
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """
         Format a log record as JSON.
-        
+
         Args:
             record: Log record to format
-            
+
         Returns:
             JSON representation of the log record
         """
@@ -222,44 +222,59 @@ class JSONFormatter(logging.Formatter):
             "thread_name": record.threadName,
             "process": record.process,
             "message": record.getMessage(),
-            "source": {
-                "file": record.pathname,
-                "line": record.lineno,
-                "function": record.funcName
-            }
+            "source": {"file": record.pathname, "line": record.lineno, "function": record.funcName},
         }
-        
+
         # Add context if available
         if self.include_context:
             context = get_log_context()
             log_entry["context"] = self._serialize(context)
-        
+
         # Add extra attributes from record
         if hasattr(record, "exc_info") and record.exc_info:
             exception = record.exc_info[1]
             log_entry["exception"] = self._serialize(exception)
-        
+
         # Add any extra attributes from record.__dict__
         for key, value in record.__dict__.items():
             if key not in {
-                "args", "asctime", "created", "exc_info", "exc_text", "filename",
-                "funcName", "id", "levelname", "levelno", "lineno", "module",
-                "msecs", "message", "msg", "name", "pathname", "process",
-                "processName", "relativeCreated", "stack_info", "thread", "threadName"
+                "args",
+                "asctime",
+                "created",
+                "exc_info",
+                "exc_text",
+                "filename",
+                "funcName",
+                "id",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "msg",
+                "name",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "thread",
+                "threadName",
             }:
                 log_entry[key] = self._serialize(value)
-        
+
         return json.dumps(log_entry)
 
 
 class ColorFormatter(logging.Formatter):
     """
     Formatter that adds color to console log output.
-    
+
     Example output:
     [2023-08-01 12:34:56] [INFO] [MainThread] [app.module]: Log message
     """
-    
+
     # ANSI color codes
     COLORS = {
         "DEBUG": "\033[36m",  # Cyan
@@ -269,7 +284,7 @@ class ColorFormatter(logging.Formatter):
         "CRITICAL": "\033[41m\033[37m",  # White on Red
         "RESET": "\033[0m",  # Reset
     }
-    
+
     def __init__(
         self,
         include_context: bool = True,
@@ -278,7 +293,7 @@ class ColorFormatter(logging.Formatter):
     ):
         """
         Initialize a ColorFormatter.
-        
+
         Args:
             include_context: Whether to include context in log entries
             include_thread: Whether to include thread information
@@ -287,40 +302,40 @@ class ColorFormatter(logging.Formatter):
         self.include_context = include_context
         self.include_thread = include_thread
         self.include_source = include_source
-        
+
         fmt = "[%(asctime)s] [%(levelname)s]"
         if include_thread:
             fmt += " [%(threadName)s]"
         fmt += " [%(name)s]: %(message)s"
-        
+
         super().__init__(fmt, datefmt="%Y-%m-%d %H:%M:%S")
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """
         Format a log record with color.
-        
+
         Args:
             record: Log record to format
-            
+
         Returns:
             Colored string representation of the log record
         """
         # Get the original formatted message
         formatted = super().format(record)
-        
+
         # Add color
         levelname = record.levelname
         color = self.COLORS.get(levelname, self.COLORS["RESET"])
         reset = self.COLORS["RESET"]
-        
+
         # Color the levelname
         formatted = formatted.replace(f"[{levelname}]", f"[{color}{levelname}{reset}]")
-        
+
         # Add context if available
         if self.include_context:
             context = get_log_context()
             context_parts = []
-            
+
             if context.request_id:
                 context_parts.append(f"request_id={context.request_id}")
             if context.user_id:
@@ -329,106 +344,104 @@ class ColorFormatter(logging.Formatter):
                 context_parts.append(f"session_id={context.session_id}")
             if context.tags:
                 context_parts.append(f"tags={','.join(context.tags)}")
-            
+
             if context_parts:
                 formatted += f" ({' '.join(context_parts)})"
-        
+
         # Add source information if requested
         if self.include_source:
             source = f"{record.pathname}:{record.lineno}"
             formatted += f" [{source}]"
-        
+
         return formatted
 
 
 class FileHandler:
     """Utility for configuring file logging."""
-    
+
     @staticmethod
     def get_log_file_path(log_dir: Union[str, Path], prefix: str = "wdbx") -> Path:
         """
         Get the path for a log file.
-        
+
         Args:
             log_dir: Directory for log files
             prefix: Prefix for log file name
-            
+
         Returns:
             Path to log file
         """
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         date_str = datetime.now().strftime("%Y-%m-%d")
         return log_dir / f"{prefix}_{date_str}.log"
-    
+
     @staticmethod
     def create_rotating_handler(
         log_file: Union[str, Path],
         max_bytes: int = 10 * 1024 * 1024,  # 10 MB
         backup_count: int = 5,
-        formatter: Optional[logging.Formatter] = None
+        formatter: Optional[logging.Formatter] = None,
     ) -> logging.Handler:
         """
         Create a rotating file handler.
-        
+
         Args:
             log_file: Path to log file
             max_bytes: Maximum file size before rotation
             backup_count: Number of backup files to keep
             formatter: Formatter for log entries
-            
+
         Returns:
             Configured RotatingFileHandler
         """
-        handler = RotatingFileHandler(
-            log_file, maxBytes=max_bytes, backupCount=backup_count
-        )
-        
+        handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+
         if formatter:
             handler.setFormatter(formatter)
-        
+
         return handler
-    
+
     @staticmethod
     def create_timed_rotating_handler(
         log_file: Union[str, Path],
         when: str = "midnight",
         interval: int = 1,
         backup_count: int = 7,
-        formatter: Optional[logging.Formatter] = None
+        formatter: Optional[logging.Formatter] = None,
     ) -> logging.Handler:
         """
         Create a time-based rotating file handler.
-        
+
         Args:
             log_file: Path to log file
             when: Time unit for rotation
             interval: Interval in the specified time unit
             backup_count: Number of backup files to keep
             formatter: Formatter for log entries
-            
+
         Returns:
             Configured TimedRotatingFileHandler
         """
         handler = TimedRotatingFileHandler(
             log_file, when=when, interval=interval, backupCount=backup_count
         )
-        
+
         if formatter:
             handler.setFormatter(formatter)
-        
+
         return handler
 
 
 class LogManager:
     """
     Manager for WDBX logging configuration.
-    
+
     This class provides a unified interface for configuring loggers,
     handlers, formatters, and log destinations.
     """
-    
+
     def __init__(
         self,
         default_level: Union[LogLevel, str, int] = LogLevel.INFO,
@@ -436,11 +449,11 @@ class LogManager:
         log_to_console: bool = True,
         log_to_file: bool = False,
         log_dir: Optional[Union[str, Path]] = None,
-        configure_root: bool = True
+        configure_root: bool = True,
     ):
         """
         Initialize a LogManager.
-        
+
         Args:
             default_level: Default log level
             log_format: Format for log entries
@@ -459,11 +472,11 @@ class LogManager:
             self.default_level = closest[1]
         else:
             self.default_level = default_level
-        
+
         self.log_format = log_format
         self.log_to_console = log_to_console
         self.log_to_file = log_to_file
-        
+
         # Get log directory
         if log_dir:
             self.log_dir = Path(log_dir)
@@ -474,25 +487,25 @@ class LogManager:
                 self.log_dir = Path(log_dir_env)
             else:
                 self.log_dir = Path("./logs")
-        
+
         # Create formatters
         self.console_formatter = self._create_formatter(self.log_format)
         self.file_formatter = self._create_formatter(LogFormat.JSON)
-        
+
         # Dictionary to track configured loggers
         self.configured_loggers: Set[str] = set()
-        
+
         # Configure root logger if requested
         if configure_root:
             self.configure_logger(logging.getLogger())
-    
+
     def _create_formatter(self, log_format: LogFormat) -> logging.Formatter:
         """
         Create a formatter based on the specified format.
-        
+
         Args:
             log_format: Format for log entries
-            
+
         Returns:
             Configured formatter
         """
@@ -502,24 +515,23 @@ class LogManager:
             return ColorFormatter()
         else:  # TEXT
             return logging.Formatter(
-                "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S"
+                "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
             )
-    
+
     def configure_logger(
         self,
         logger: Union[str, logging.Logger],
         level: Optional[Union[LogLevel, str, int]] = None,
-        propagate: bool = False
+        propagate: bool = False,
     ) -> logging.Logger:
         """
         Configure a logger with the specified settings.
-        
+
         Args:
             logger: Logger object or name
             level: Log level (defaults to manager's default_level)
             propagate: Whether to propagate logs to parent loggers
-            
+
         Returns:
             Configured logger
         """
@@ -528,18 +540,18 @@ class LogManager:
             logger_obj = logging.getLogger(logger)
         else:
             logger_obj = logger
-        
+
         # Skip if already configured
         if logger_obj.name in self.configured_loggers:
             return logger_obj
-        
+
         # Remove existing handlers
         for handler in list(logger_obj.handlers):
             logger_obj.removeHandler(handler)
-        
+
         # Set propagation
         logger_obj.propagate = propagate
-        
+
         # Set level
         if level is None:
             logger_obj.setLevel(self.default_level.value)
@@ -549,13 +561,13 @@ class LogManager:
             logger_obj.setLevel(level)
         else:
             logger_obj.setLevel(level.value)
-        
+
         # Add console handler if enabled
         if self.log_to_console:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(self.console_formatter)
             logger_obj.addHandler(console_handler)
-        
+
         # Add file handler if enabled
         if self.log_to_file:
             log_file = FileHandler.get_log_file_path(self.log_dir)
@@ -563,28 +575,30 @@ class LogManager:
                 log_file, formatter=self.file_formatter
             )
             logger_obj.addHandler(file_handler)
-        
+
         # Mark as configured
         self.configured_loggers.add(logger_obj.name)
-        
+
         return logger_obj
-    
+
     def get_logger(self, name: str) -> logging.Logger:
         """
         Get a configured logger.
-        
+
         Args:
             name: Logger name
-            
+
         Returns:
             Configured logger
         """
         return self.configure_logger(name)
-    
-    def set_level(self, level: Union[LogLevel, str, int], logger_name: Optional[str] = None) -> None:
+
+    def set_level(
+        self, level: Union[LogLevel, str, int], logger_name: Optional[str] = None
+    ) -> None:
         """
         Set the log level for a logger.
-        
+
         Args:
             level: Log level
             logger_name: Logger name (None for all configured loggers)
@@ -596,7 +610,7 @@ class LogManager:
             level_value = level.value
         else:
             level_value = level
-        
+
         if logger_name:
             # Set level for specific logger
             logger = logging.getLogger(logger_name)
@@ -605,7 +619,7 @@ class LogManager:
             # Set level for all configured loggers
             for name in self.configured_loggers:
                 logging.getLogger(name).setLevel(level_value)
-    
+
     def shutdown(self) -> None:
         """Shut down logging and ensure all messages are flushed."""
         logging.shutdown()
@@ -618,37 +632,39 @@ _LOG_MANAGER_INSTANCE: Optional[LogManager] = None
 def _init_from_config() -> LogManager:
     """
     Initialize LogManager from configuration.
-    
+
     Returns:
         Configured LogManager
     """
     # Import here to avoid circular import
     from ..config.config_manager import get_config
-    
+
     log_level = get_config("log_level", "INFO")
     log_format = get_config("log_format", "color")
     log_to_console = get_config("log_to_console", True)
     log_to_file = get_config("log_to_file", False)
     log_dir = get_config("log_dir", "./logs")
-    
+
     return LogManager(
         default_level=log_level,
-        log_format=LogFormat(log_format.lower()) if isinstance(log_format, str) else LogFormat.COLOR,
+        log_format=(
+            LogFormat(log_format.lower()) if isinstance(log_format, str) else LogFormat.COLOR
+        ),
         log_to_console=log_to_console,
         log_to_file=log_to_file,
-        log_dir=log_dir
+        log_dir=log_dir,
     )
 
 
 def get_log_manager() -> LogManager:
     """
     Get the log manager instance, initializing it if necessary.
-    
+
     Returns:
         LogManager instance
     """
     global _LOG_MANAGER_INSTANCE
-    
+
     if _LOG_MANAGER_INSTANCE is None:
         try:
             # Try to initialize from config
@@ -656,17 +672,17 @@ def get_log_manager() -> LogManager:
         except ImportError:
             # Fall back to default if config not available
             _LOG_MANAGER_INSTANCE = LogManager()
-    
+
     return _LOG_MANAGER_INSTANCE
 
 
 def get_logger(name: str) -> logging.Logger:
     """
     Get a configured logger.
-    
+
     Args:
         name: Logger name
-        
+
     Returns:
         Configured logger
     """
@@ -676,7 +692,7 @@ def get_logger(name: str) -> logging.Logger:
 def set_log_level(level: Union[LogLevel, str, int], logger_name: Optional[str] = None) -> None:
     """
     Set the log level for a logger.
-    
+
     Args:
         level: Log level
         logger_name: Logger name (None for all configured loggers)
@@ -688,11 +704,11 @@ def set_log_level(level: Union[LogLevel, str, int], logger_name: Optional[str] =
 def log_duration(
     logger: Union[str, logging.Logger],
     operation: str,
-    level: Union[LogLevel, str, int] = LogLevel.INFO
+    level: Union[LogLevel, str, int] = LogLevel.INFO,
 ) -> None:
     """
     Context manager to log the duration of an operation.
-    
+
     Args:
         logger: Logger object or name
         operation: Name of the operation
@@ -703,7 +719,7 @@ def log_duration(
         logger_obj = get_logger(logger)
     else:
         logger_obj = logger
-    
+
     # Convert level to int
     if isinstance(level, str):
         level_value = LogLevel.from_string(level).value
@@ -711,7 +727,7 @@ def log_duration(
         level_value = level.value
     else:
         level_value = level
-    
+
     start_time = time.time()
     try:
         yield
@@ -727,4 +743,37 @@ def _shutdown_logging():
         _LOG_MANAGER_INSTANCE.shutdown()
 
 
-atexit.register(_shutdown_logging) 
+atexit.register(_shutdown_logging)
+
+
+def configure_logging(
+    level: Union[LogLevel, str, int] = LogLevel.INFO,
+    log_format: LogFormat = LogFormat.COLOR,
+    log_to_console: bool = True,
+    log_to_file: bool = False,
+    log_dir: Optional[Union[str, Path]] = None,
+    configure_root: bool = True,
+) -> LogManager:
+    """
+    Configure logging for the WDBX application.
+
+    Args:
+        level: Logging level to use
+        log_format: Format for log messages
+        log_to_console: Whether to log to console
+        log_to_file: Whether to log to file
+        log_dir: Directory for log files
+        configure_root: Whether to configure the root logger
+
+    Returns:
+        LogManager instance
+    """
+    manager = LogManager(
+        default_level=level,
+        log_format=log_format,
+        log_to_console=log_to_console,
+        log_to_file=log_to_file,
+        log_dir=log_dir,
+        configure_root=configure_root,
+    )
+    return manager

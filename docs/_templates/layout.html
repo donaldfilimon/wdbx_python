@@ -1,11 +1,30 @@
-{% extends "pydata_sphinx_theme/layout.html" %}
+{% extends "!layout.html" %}
 
-{% block extrahead %}
+{%- block extrahead %}
 {{ super() }}
-<link rel="stylesheet" type="text/css" href="{{ pathto('_static/custom.css', 1) }}" />
+{%- if not embedded %}
+<style type="text/css">
+  table.right { float: right; margin-left: 20px; }
+  table.right td { border: 1px solid #ccc; }
+</style>
+{%- endif %}
 {% endblock %}
 
-{% block scripts %}
-{{ super() }}
-<script type="text/javascript" src="{{ pathto('_static/custom.js', 1) }}"></script>
-{% endblock %} 
+{% block rootrellink %}
+    <li><a href="{{ pathto('index') }}">WDBX {{ release }} documentation</a> &raquo;</li>
+{% endblock %}
+
+{% block header %}
+<div class="header">
+  <div class="headertitle">
+    <div class="title">{{ title|striptags|e }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<div class="footer">
+  {% if show_copyright %}&copy;{{ copyright }}.{% endif %}
+  {% if show_sphinx %}Created using <a href="http://sphinx-doc.org/">Sphinx</a> {{ sphinx_version }}.{% endif %}
+</div>
+{% endblock %}

@@ -9,114 +9,138 @@ import json
 import logging
 import os
 import re
-import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Optional
 from urllib.parse import urljoin, urlparse
 
-# Third-party imports
-import requests
-from bs4 import BeautifulSoup
-from bs4.builder import ParserRejectedMarkup
+# Constants for magic numbers
+MIN_CHUNK_SIZE = 100
+RATE_LIMIT_WINDOW_SECONDS = 60
+HTTP_STATUS_TOO_MANY_REQUESTS = 429
+HTTP_STATUS_CLIENT_ERROR_MIN = 400
+MAX_FILENAME_LENGTH = 100
+MAX_DISPLAY_URL_LENGTH = 40
+MAX_DISPLAY_TITLE_LENGTH = 30
+MAX_DISPLAY_CHUNK_PREVIEW = 100
+MAX_DISPLAY_RESULTS_PREVIEW = 10
+MAX_RESULTS_BEFORE_MORE_NOTICE = 10
+MAX_CHUNKS_BEFORE_MORE_NOTICE = 3
+MIN_PARTS_PLUGIN_COMMAND = 2
+DEFAULT_MAX_PAGES = 1000
+DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_MAX_FILE_SIZE_MB = 10
 
-# WDBX imports
+# Check for required dependencies
 try:
-    from wdbx.data_structures import EmbeddingVector
+    import threading
+    from urllib.parse import urljoin, urlparse
+
+    import requests
+    from bs4 import BeautifulSoup
+    from bs4.builder import ParserRejectedMarkup
+
+    SCRAPER_AVAILABLE = True
 except ImportError:
-    # Mock for testing outside of WDBX
-    class EmbeddingVector:
-        def __init__(self, vector, metadata=None):
-            self.vector = vector
-            self.metadata = metadata or {}
+    SCRAPER_AVAILABLE = False
+
+# Initialize logger
+logger = logging.getLogger("WDBX.plugins.web_scraper")
+
+# Global variables
+scraper_config = None  # Will be initialized in register_commands
+rate_limiter = None  # Will be initialized in register_commands
+robots_parser = None  # Will be initialized in register_commands
+domain_counts = {}  # Track counts of pages scraped per domain
+scraped_cache = {}  # Cache of scraped content
+active_scrapes = set()  # Set of active scrape IDs
+scrape_status = {}  # Status of scrapes
 
 
-# Custom exceptions
+# Initialize embedding class for type hints
+class EmbeddingVector:
+    def __init__(self, vector, metadata=None):
+        self.vector = vector
+        self.metadata = metadata if metadata is not None else {}
 
 
 class WebScraperError(Exception):
     """Base exception for web scraper errors."""
 
-    pass
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
 
 
 class FetchError(WebScraperError):
-    """Raised when there's an error fetching a URL."""
+    """Exception raised when fetching a URL fails."""
 
-    pass
+    def __init__(self, url: str, message: str, status_code: Optional[int] = None):
+        self.url = url
+        self.status_code = status_code
+        super().__init__(f"Failed to fetch {url}: {message}")
 
 
 class FetchTimeoutError(FetchError):
-    """Raised when a request times out."""
-
-    pass
+    """Exception raised when fetching a URL times out."""
 
 
 class FetchRateLimitError(FetchError):
-    """Raised when rate limiting is encountered."""
-
-    pass
+    """Exception raised when rate limit is exceeded."""
 
 
 class FetchRobotsError(FetchError):
-    """Raised when robots.txt disallows access."""
-
-    pass
+    """Exception raised when robots.txt disallows access."""
 
 
 class ScrapingError(WebScraperError):
-    """Raised when there's an error parsing content."""
-
-    pass
+    """Exception raised when scraping content fails."""
 
 
 class StorageError(WebScraperError):
-    """Raised when there's an error storing scraped data."""
-
-    pass
+    """Exception raised when storing scraped content fails."""
 
 
 class ConfigurationError(WebScraperError):
-    """Raised when there's an error with the scraper configuration."""
-
-    pass
+    """Exception raised when configuration is invalid."""
 
 
 class ValidationError(WebScraperError):
-    """Raised when there's an error validating input data."""
-
-    pass
+    """Exception raised when validation fails."""
 
 
 class RateLimitError(WebScraperError):
-    """Raised when rate limiting is detected."""
-
-    pass
+    """Exception raised when rate limit is exceeded."""
 
 
 class RobotsTxtError(WebScraperError):
-    """Raised when robots.txt rules are violated."""
-
-    pass
+    """Exception raised when robots.txt parsing fails."""
 
 
 class WebScraperConfig:
-    """Configuration for web scraper."""
+    """Configuration for the Web Scraper Plugin."""
 
     def __init__(self):
-        self.timeout = 30
-        self.max_retries = 3
-        self.rate_limit = 1.0
+        """Initialize with default values."""
         self.user_agent = "WDBX Web Scraper/1.0"
-        self.vector_dim = 1536
+        self.timeout = 30  # seconds
+        self.max_retries = 3
+        self.retry_delay = 2  # seconds
+        self.follow_redirects = True
+        self.respect_robots_txt = True
+        self.extract_links = True
+        self.extract_metadata = True
+        self.chunk_size = 1000
+        self.chunk_overlap = 200
+        self.allowed_content_types = ["text/html", "application/xhtml+xml"]
+        self.concurrent_requests = 5
+        self.requests_per_minute = 60
+        self.save_html = False
         self.html_dir = "scraped_html"
-        self.db_path = "scraped_data.db"
-        self.log_level = "INFO"
-
-
-# Setup logging with structured format
+        self.max_pages_per_domain = 10
 
 
 def setup_logging():
@@ -179,7 +203,7 @@ class ScraperConfig:
     save_html: bool = True
     html_dir: str = "./wdbx_scraped_html"
     max_file_size_mb: int = 10
-    allowed_content_types: List[str] = None
+    allowed_content_types: list[str] = None
     default_embedding_model: str = "model:embed"
 
     # Rate limiting
@@ -201,8 +225,8 @@ class ScraperConfig:
             raise ValidationError("Max pages per domain must be positive")
 
         # Validate content processing
-        if self.chunk_size < 100:
-            raise ValidationError("Chunk size must be at least 100 characters")
+        if self.chunk_size < MIN_CHUNK_SIZE:
+            raise ValidationError(f"Chunk size must be at least {MIN_CHUNK_SIZE} characters")
         if self.chunk_overlap < 0:
             raise ValidationError("Chunk overlap must be non-negative")
         if self.chunk_overlap >= self.chunk_size:
@@ -222,7 +246,7 @@ class ScraperConfig:
         if self.concurrent_requests < 1:
             raise ValidationError("Concurrent requests must be positive")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
             "user_agent": self.user_agent,
@@ -246,7 +270,7 @@ class ScraperConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ScraperConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "ScraperConfig":
         """Create config from dictionary."""
         return cls(**data)
 
@@ -264,24 +288,28 @@ class RateLimiter:
     def __init__(self, requests_per_minute: int, concurrent_requests: int):
         self.requests_per_minute = requests_per_minute
         self.concurrent_requests = concurrent_requests
-        self.request_times: List[float] = []
+        self.request_times: list[float] = []
         self.semaphore = threading.Semaphore(concurrent_requests)
+        self.lock = threading.Lock()  # Add lock for thread safety
 
     def acquire(self):
         """Acquire permission to make a request."""
         self.semaphore.acquire()
         now = time.time()
 
-        # Remove old request times
-        self.request_times = [t for t in self.request_times if now - t < 60]
+        with self.lock:  # Use lock for thread-safe operations
+            # Remove old request times
+            self.request_times = [
+                t for t in self.request_times if now - t < RATE_LIMIT_WINDOW_SECONDS
+            ]
 
-        # If we've hit the rate limit, wait
-        if len(self.request_times) >= self.requests_per_minute:
-            sleep_time = 60 - (now - self.request_times[0])
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            # If we've hit the rate limit, wait
+            if len(self.request_times) >= self.requests_per_minute:
+                sleep_time = 60 - (now - self.request_times[0])
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
-        self.request_times.append(now)
+            self.request_times.append(time.time())  # Use current time after potential sleep
 
     def release(self):
         """Release the semaphore after request is complete."""
@@ -292,14 +320,23 @@ class RobotsParser:
     """Parser for robots.txt files."""
 
     def __init__(self):
-        self.rules: Dict[str, List[Tuple[str, bool]]] = {}
-        self.sitemaps: Dict[str, List[str]] = {}
+        self.rules: dict[str, list[tuple[str, bool]]] = {}
+        self.sitemaps: dict[str, list[str]] = {}
+        self.cache: dict[str, bool] = {}  # Cache for URL permission results
+        self.parsed_domains: set[str] = set()  # Track domains we've already parsed
 
     def parse(self, robots_url: str) -> None:
         """Parse robots.txt file from URL."""
+        domain = _get_domain(robots_url)
+
+        # Skip if already parsed this domain
+        if domain in self.parsed_domains:
+            return
+
         try:
             response = requests.get(robots_url, timeout=10)
             response.raise_for_status()
+            self.parsed_domains.add(domain)
 
             current_agent = "*"
             for line in response.text.splitlines():
@@ -313,39 +350,47 @@ class RobotsParser:
                         self.rules[current_agent] = []
                 elif line.startswith("allow:"):
                     path = line.split(":", 1)[1].strip()
-                    self.rules[current_agent].append((path, True))
+                    self.rules.setdefault(current_agent, []).append((path, True))
                 elif line.startswith("disallow:"):
                     path = line.split(":", 1)[1].strip()
-                    self.rules[current_agent].append((path, False))
+                    self.rules.setdefault(current_agent, []).append((path, False))
                 elif line.startswith("sitemap:"):
                     sitemap = line.split(":", 1)[1].strip()
-                    if current_agent not in self.sitemaps:
-                        self.sitemaps[current_agent] = []
-                    self.sitemaps[current_agent].append(sitemap)
+                    self.sitemaps.setdefault(current_agent, []).append(sitemap)
 
         except Exception as e:
             logger.warning(f"Error parsing robots.txt from {robots_url}: {e}")
 
     def is_allowed(self, url: str, user_agent: str = "*") -> bool:
         """Check if URL is allowed by robots.txt rules."""
+        # Check cache first
+        cache_key = f"{url}:{user_agent}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         if not self.rules:
+            self.cache[cache_key] = True
             return True
 
         parsed_url = urlparse(url)
-        path = parsed_url.path
+        path = parsed_url.path or "/"  # Default to root path if empty
 
         # Check specific user agent rules first
         if user_agent in self.rules:
             for rule_path, is_allowed in self.rules[user_agent]:
                 if path.startswith(rule_path):
+                    self.cache[cache_key] = is_allowed
                     return is_allowed
 
         # Check wildcard rules
         if "*" in self.rules:
             for rule_path, is_allowed in self.rules["*"]:
                 if path.startswith(rule_path):
+                    self.cache[cache_key] = is_allowed
                     return is_allowed
 
+        # Default to allowed if no matching rules
+        self.cache[cache_key] = True
         return True
 
 
@@ -362,14 +407,15 @@ def _check_robots_txt(url: str) -> bool:
     parsed_url = urlparse(url)
     robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
 
-    # Parse robots.txt if not already done
-    if not robots_parser.rules:
+    # Parse robots.txt if not already done for this domain
+    domain = _get_domain(url)
+    if domain not in robots_parser.parsed_domains:
         robots_parser.parse(robots_url)
 
     return robots_parser.is_allowed(url, scraper_config.user_agent)
 
 
-def register_commands(plugin_registry: Dict[str, Callable]) -> None:
+def register_commands(plugin_registry: dict[str, Callable]) -> None:
     """
     Register web scraper commands with the CLI.
 
@@ -489,13 +535,13 @@ def _update_config_value(key: str, value: str) -> bool:
     new_value = None
 
     try:
-        if expected_type == bool:
+        if expected_type is bool:
             new_value = value.lower() in ("true", "yes", "1", "y")
-        elif expected_type == int:
+        elif expected_type is int:
             new_value = int(value)
-        elif expected_type == str:
+        elif expected_type is str:
             new_value = value
-        elif expected_type == list:
+        elif expected_type is list:
             if value.startswith("[") and value.endswith("]"):
                 new_value = json.loads(value)
             else:
@@ -504,7 +550,7 @@ def _update_config_value(key: str, value: str) -> bool:
                 raise ValueError("Invalid list format")
         else:
             error_msg = f"Cannot update configuration key '{key}' of type {expected_type.__name__}"
-            print(f"[1;31m{error_msg}[0m")
+            print(f"\033[1;31m{error_msg}\033[0m")
             return False
 
         # Temporarily update the attribute
@@ -513,20 +559,20 @@ def _update_config_value(key: str, value: str) -> bool:
         # Re-validate the entire config object
         try:
             scraper_config.__post_init__()  # Trigger validation
-            print(f"[1;32mSet {key} = {new_value}[0m")
+            print(f"\033[1;32mSet {key} = {new_value}\033[0m")
             return True
         except ValidationError as e:
             # Revert the change if validation fails
             setattr(scraper_config, key, original_value)
-            print(f"[1;31mError: Invalid value for {key}: {e}[0m")
+            print(f"\033[1;31mError: Invalid value for {key}: {e}\033[0m")
             return False
 
     except ValueError:
         error_msg = f"Invalid value type for {key}. Expected {expected_type.__name__}"
-        print(f"[1;31m{error_msg}[0m")
+        print(f"\033[1;31m{error_msg}\033[0m")
         return False
     except json.JSONDecodeError:
-        print(f"[1;31mError: Invalid JSON format for list value for {key}[0m")
+        print(f"\033[1;31mError: Invalid JSON format for list value for {key}\033[0m")
         return False
 
 
@@ -548,7 +594,21 @@ def _normalize_url(url: str) -> str:
     if url.endswith("/"):
         url = url[:-1]
 
-    return url
+    # Handle URL encoding issues
+    parsed = urlparse(url)
+    # Ensure the path is properly encoded
+    path = parsed.path
+
+    # Reconstruct the URL with proper components
+    normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
+    if parsed.params:
+        normalized += f";{parsed.params}"
+    if parsed.query:
+        normalized += f"?{parsed.query}"
+    if parsed.fragment:
+        normalized += f"#{parsed.fragment}"
+
+    return normalized
 
 
 def _get_domain(url: str) -> str:
@@ -579,8 +639,8 @@ def _safe_filename(url: str) -> str:
     safe_name = re.sub(r"^https?://", "", url)
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", safe_name)
     # Limit length
-    if len(safe_name) > 100:
-        safe_name = safe_name[:100]
+    if len(safe_name) > MAX_FILENAME_LENGTH:
+        safe_name = safe_name[:MAX_FILENAME_LENGTH]
     return safe_name
 
 
@@ -622,11 +682,11 @@ class ScrapedContent:
     title: Optional[str]
     description: Optional[str]
     content: str
-    metadata: Dict[str, Any]
-    chunks: List[str]
+    metadata: dict[str, Any]
+    chunks: list[str]
     html_path: Optional[str]
     scrape_id: str
-    timestamp: float
+    timestamp: float = field(default_factory=time.time)
 
 
 class ContentProcessor:
@@ -644,17 +704,21 @@ class ContentProcessor:
         text = re.sub(r"[^\w\s.,!?-]", "", text)
         # Normalize quotes
         text = re.sub(r'[""]', '"', text)
-        text = re.sub(r"[" "]", "'", text)
+        text = re.sub(r"[''']", "'", text)
         return text.strip()
 
-    def split_into_sentences(self, text: str) -> List[str]:
+    def split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences."""
-        # Basic sentence splitting - can be improved with NLP
+        # More robust sentence splitting
+        # Look for period, question mark, or exclamation followed by space or newline
         sentences = re.split(r"(?<=[.!?])\s+", text)
         return [s.strip() for s in sentences if s.strip()]
 
-    def create_chunks(self, text: str) -> List[str]:
+    def create_chunks(self, text: str) -> list[str]:
         """Create overlapping chunks of text."""
+        if not text:
+            return []
+
         chunks = []
         sentences = self.split_into_sentences(text)
 
@@ -689,7 +753,7 @@ class ContentProcessor:
         return chunks
 
 
-def _extract_metadata(url: str, soup: BeautifulSoup) -> Dict[str, Any]:
+def _extract_metadata(url: str, soup: BeautifulSoup) -> dict[str, Any]:
     """
     Extract metadata from HTML content.
 
@@ -743,15 +807,16 @@ def _extract_metadata(url: str, soup: BeautifulSoup) -> Dict[str, Any]:
         metadata["structured_data"] = []
         for script in structured_data:
             try:
-                data = json.loads(script.string)
-                metadata["structured_data"].append(data)
+                if script.string:
+                    data = json.loads(script.string)
+                    metadata["structured_data"].append(data)
             except json.JSONDecodeError:
                 continue
 
     # Extract language
-    lang = soup.find("html").get("lang")
-    if lang:
-        metadata["language"] = lang
+    html_tag = soup.find("html")
+    if html_tag and html_tag.get("lang"):
+        metadata["language"] = html_tag.get("lang")
 
     # Extract canonical URL
     canonical = soup.find("link", attrs={"rel": "canonical"})
@@ -761,7 +826,7 @@ def _extract_metadata(url: str, soup: BeautifulSoup) -> Dict[str, Any]:
     return metadata
 
 
-def _extract_links(url: str, soup: BeautifulSoup) -> List[str]:
+def _extract_links(url: str, soup: BeautifulSoup) -> list[str]:
     """
     Extract links from HTML content.
 
@@ -804,7 +869,7 @@ def _extract_links(url: str, soup: BeautifulSoup) -> List[str]:
 
 def _extract_text_content(soup: BeautifulSoup) -> str:
     """
-    Extract cleaned text content from HTML.
+    Extract and clean text content from BeautifulSoup object.
 
     Args:
         soup: BeautifulSoup object
@@ -812,12 +877,31 @@ def _extract_text_content(soup: BeautifulSoup) -> str:
     Returns:
         Cleaned text content
     """
-    # Remove script and style elements
-    for element in soup(["script", "style", "header", "footer", "nav"]):
+    # Create a copy of the soup to avoid modifying the original
+    soup_copy = BeautifulSoup(str(soup), "html.parser")
+
+    # Remove script, style, and other non-content elements
+    for element in soup_copy(
+        ["script", "style", "header", "footer", "nav", "iframe", "noscript", "aside"]
+    ):
         element.decompose()
 
+    # Remove hidden elements
+    for element in soup_copy.find_all(
+        style=lambda value: value and "display:none" in value.replace(" ", "")
+    ):
+        element.decompose()
+
+    # Get text with better spacing around block elements
+    for tag in soup_copy.find_all(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li"]):
+        if tag.string:
+            tag.string.replace_with(f"{tag.string} ")
+        else:
+            # Insert space after the tag
+            tag.append(" ")
+
     # Get text
-    text = soup.get_text(separator=" ", strip=True)
+    text = soup_copy.get_text(separator=" ", strip=True)
 
     # Clean up text (remove extra whitespace)
     text = re.sub(r"\s+", " ", text).strip()
@@ -825,7 +909,7 @@ def _extract_text_content(soup: BeautifulSoup) -> str:
     return text
 
 
-def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
     """
     Split text into overlapping chunks.
 
@@ -837,44 +921,13 @@ def _chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
     Returns:
         List of text chunks
     """
-    chunks = []
-
-    if not text:
-        return chunks
-
-    # If text is shorter than chunk_size, return it as is
-    if len(text) <= chunk_size:
-        chunks.append(text)
-        return chunks
-
-    # Simple chunking by characters with overlap
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-
-        # Try to end on a sentence or paragraph boundary
-        if end < len(text):
-            # Look for sentence or paragraph end within the last 100 chars
-            search_end = max(start + chunk_size - 100, start)
-            # Try to find a period, question mark, or exclamation followed by space
-            for marker in [". ", "! ", "? ", "\n", "\r\n"]:
-                last_marker = text.rfind(marker, search_end, end)
-                if last_marker != -1:
-                    end = last_marker + 1  # Include the marker
-                    break
-
-        # Add chunk to list
-        chunks.append(text[start:end].strip())
-
-        # Move start position for next chunk, accounting for overlap
-        start = end - chunk_overlap
-
-    return chunks
+    processor = ContentProcessor(chunk_size, chunk_overlap)
+    return processor.create_chunks(text)
 
 
 def _create_embedding(
-    db: Any, text: str, metadata: Dict[str, Any] = None
-) -> Optional[EmbeddingVector]:
+    db: Any, text: str, metadata: dict[str, Any] = None
+) -> Optional[Any]:
     """
     Create embedding from text using configured model.
 
@@ -909,7 +962,7 @@ def _create_embedding(
         return None
 
 
-def _dispatch_to_plugin(db: Any, command: str, text: str, metadata: Dict[str, Any] = None) -> Any:
+def _dispatch_to_plugin(db: Any, command: str, text: str, metadata: dict[str, Any] = None) -> Any:
     """
     Dispatch to another plugin command.
 
@@ -925,7 +978,7 @@ def _dispatch_to_plugin(db: Any, command: str, text: str, metadata: Dict[str, An
     try:
         # Extract plugin and subcommand
         parts = command.split(":", 1)
-        if len(parts) != 2:
+        if len(parts) != MIN_PARTS_PLUGIN_COMMAND:
             logger.error(f"Invalid plugin command format: {command}")
             return None
 
@@ -952,7 +1005,7 @@ def _dispatch_to_plugin(db: Any, command: str, text: str, metadata: Dict[str, An
         return None
 
 
-def _store_scraped_data(db: Any, content: ScrapedContent, response_info: Dict[str, Any]) -> str:
+def _store_scraped_data(db: Any, content: ScrapedContent, response_info: dict[str, Any]) -> str:
     """
     Store scraped data in database and cache.
 
@@ -1010,12 +1063,12 @@ def _store_scraped_data(db: Any, content: ScrapedContent, response_info: Dict[st
                         logger.warning("Database does not support storing embeddings directly")
         except Exception as e:
             logger.error(f"Error storing scraped data in database: {e}")
-            raise StorageError(f"Failed to store scraped data: {e}")
+            raise StorageError(f"Failed to store scraped data: {e}") from e
 
     return content.scrape_id
 
 
-def _fetch_url(url: str) -> Tuple[Optional[str], Optional[Dict]]:
+def _fetch_url(url: str) -> tuple[Optional[str], Optional[dict[str, Any]]]:
     """
     Fetch URL with retries, rate limiting, and error handling.
 
@@ -1083,11 +1136,13 @@ def _fetch_url(url: str) -> Tuple[Optional[str], Optional[Dict]]:
             )
 
             # Check for rate limiting
-            if response.status_code == 429:  # Too Many Requests
-                raise FetchRateLimitError(normalized_url, "Rate limit exceeded", 429)
+            if response.status_code == HTTP_STATUS_TOO_MANY_REQUESTS:  # Too Many Requests
+                raise FetchRateLimitError(
+                    normalized_url, "Rate limit exceeded", HTTP_STATUS_TOO_MANY_REQUESTS
+                ) from e
 
             # Check if status code indicates success
-            if response.status_code >= 400:
+            if response.status_code >= HTTP_STATUS_CLIENT_ERROR_MIN:
                 response_info["error"] = f"HTTP error: {response.status_code}"
                 logger.warning(f"HTTP error {response.status_code} for {normalized_url}")
                 continue
@@ -1117,23 +1172,25 @@ def _fetch_url(url: str) -> Tuple[Optional[str], Optional[Dict]]:
 
             return content, response_info
 
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as e:
             response_info["error"] = f"Request timed out after {scraper_config.timeout}s"
             logger.warning(f"Request timed out for {normalized_url}")
             timeout = scraper_config.timeout
-            raise FetchTimeoutError(normalized_url, f"Request timed out after {timeout}s")
-        except requests.exceptions.TooManyRedirects:
+            raise FetchTimeoutError(
+                normalized_url, f"Request timed out after {timeout}s"
+            ) from e
+        except requests.exceptions.TooManyRedirects as e:
             response_info["error"] = "Too many redirects"
             logger.warning(f"Too many redirects for {normalized_url}")
-            raise FetchError(normalized_url, "Too many redirects")
+            raise FetchError(normalized_url, "Too many redirects") from e
         except requests.exceptions.RequestException as e:
             response_info["error"] = f"Request error: {str(e)}"
             logger.warning(f"Request error for {normalized_url}: {e}")
-            raise FetchError(normalized_url, str(e))
+            raise FetchError(normalized_url, str(e)) from e
         except Exception as e:
             response_info["error"] = f"Unexpected error: {str(e)}"
             logger.error(f"Unexpected error fetching {normalized_url}: {e}")
-            raise FetchError(normalized_url, str(e))
+            raise FetchError(normalized_url, str(e)) from e
         finally:
             # Always release rate limiter
             rate_limiter.release()
@@ -1255,7 +1312,7 @@ def scrape_url(db: Any, url: str) -> str:
         raise ScrapingError(f"Error processing content: {e}") from e
 
 
-def scrape_site(db: Any, start_url: str, max_pages: Optional[int] = None) -> List[str]:
+def scrape_site(db: Any, start_url: str, max_pages: Optional[int] = None) -> list[str]:
     """
     Crawl a site starting from URL and following links.
 
@@ -1283,7 +1340,8 @@ def scrape_site(db: Any, start_url: str, max_pages: Optional[int] = None) -> Lis
     crawl_errors = []  # Collect non-fatal errors during crawl
 
     logger.info(
-        f"Starting site crawl from {normalized_url} (max {max_pages} pages, domain: {base_domain})"
+        f"Starting site crawl from {normalized_url} (max {max_pages} pages, "
+        f"domain: {base_domain})"
     )
 
     while urls_to_scrape and len(scraped_urls) < max_pages:
@@ -1347,8 +1405,8 @@ def scrape_site(db: Any, start_url: str, max_pages: Optional[int] = None) -> Lis
             continue
 
     logger.info(
-        f"Completed site crawl for {base_domain}, successfully scraped {
-            len(scraped_urls)} pages."
+        f"Completed site crawl for {base_domain}, successfully scraped "
+        f"{len(scraped_urls)} pages."
     )
     if crawl_errors:
         logger.warning(f"Encountered {len(crawl_errors)} errors during crawl. First few errors:")
@@ -1362,24 +1420,38 @@ def scrape_site(db: Any, start_url: str, max_pages: Optional[int] = None) -> Lis
 
 def cmd_scrape_help(db: Any, args: str) -> None:
     """
-    Show help for web scraper commands.
+    Display help information for the web scraper commands.
 
     Args:
-        db: WDBX database instance
-        args: Command arguments (unused)
+        db: WDBX database instance (not used)
+        args: Command arguments (not used)
     """
-    print("\033[1;35mWDBX Web Scraper Plugin\033[0m")
-    print("\033[1;35mWDBX Web Scraper Plugin\033[0m")
-    print("The following web scraper commands are available:")
-    print("\033[1m  scrape:url <url>\033[0m - Scrape a single URL and add to the database")
-    print("\033[1m  scrape:site <url> [max_pages]\033[0m - Crawl a site starting from URL")
-    print("\033[1m  scrape:list [domain]\033[0m - List scraped URLs, optionally filtered by domain")
-    print("\033[1m  scrape:status <id>\033[0m - Show detailed status of a scraped document")
-    print("\033[1m  scrape:search <query>\033[0m - Search scraped content")
-    print("\033[1m  scrape:config [key=value]\033[0m - Configure web scraper settings")
+    print("\nWDBX Web Scraper Commands:")
+    print("  scrape:url <url>     - Scrape a single URL and store the content")
+    print("  scrape:site <url>    - Scrape multiple pages from a website")
+    print("  scrape:list          - List recently scraped content")
+    print("  scrape:status <id>   - Check the status of a scrape operation")
+    print("  scrape:search <query> - Search scraped content")
+    print("  scrape:config [key=value] - View or update scraper configuration")
+    print("  scrape:help          - Show this help message")
+    print("\nExamples:")
+    print("  scrape:url https://example.com")
+    print("  scrape:site https://example.com --limit 10")
+    print('  scrape:config user_agent="My Custom User Agent"')
 
-    print("\n\033[1;34mWeb Scraper Configuration:\033[0m")
-    _print_config()
+    print("\nConfiguration options:")
+    print("  user_agent           - User agent string for requests")
+    print("  timeout              - Request timeout in seconds")
+    print("  max_retries          - Maximum number of retry attempts")
+    print("  retry_delay          - Delay between retries in seconds")
+    print("  follow_redirects     - Whether to follow redirects (true/false)")
+    print("  respect_robots_txt   - Whether to respect robots.txt (true/false)")
+    print("  extract_links        - Whether to extract links (true/false)")
+    print("  extract_metadata     - Whether to extract metadata (true/false)")
+    print("  chunk_size           - Size of text chunks for embeddings")
+    print("  chunk_overlap        - Overlap between text chunks")
+    print("  requests_per_minute  - Rate limit for requests per minute")
+    print("  concurrent_requests  - Maximum concurrent requests")
 
 
 def cmd_scrape_config(db: Any, args: str) -> None:
@@ -1483,8 +1555,6 @@ def cmd_scrape_url(db: Any, args: str) -> None:
         logger.error(f"Rate limit error: {e}")
         print(f"\033[1;31mRate limit detected for {e.url}.\033[0m")
         print("Please try again later.")
-        print("You can decrease request frequency with:")
-        print("scrape:config set requests_per_minute <lower_value>")
 
     except FetchTimeoutError as e:
         logger.error(f"Timeout error: {e}")
@@ -1674,8 +1744,14 @@ def cmd_scrape_list(db: Any, args: str) -> None:
     for item in scraped_items:
         # Truncate long fields
         short_id = item["id"][:8]
-        short_url = item["url"][:40] + ("..." if len(item["url"]) > 40 else "")
-        short_title = item["title"][:30] + ("..." if len(item["title"]) > 30 else "")
+        short_url = (
+            item["url"][:MAX_DISPLAY_URL_LENGTH]
+            + ("..." if len(item["url"]) > MAX_DISPLAY_URL_LENGTH else "")
+        )
+        short_title = (
+            item["title"][:MAX_DISPLAY_TITLE_LENGTH]
+            + ("..." if len(item["title"]) > MAX_DISPLAY_TITLE_LENGTH else "")
+        )
 
         print(fmt.format(short_id, short_url, short_title, item["time"], item["chunks"]))
 
@@ -1738,17 +1814,18 @@ def cmd_scrape_status(db: Any, args: str) -> None:
     print("\n\033[1mMetadata:\033[0m")
     for key, value in metadata.items():
         if key not in ["response_info", "links", "scrape_id", "chunk_count"]:
-            if isinstance(value, str) and len(value) > 100:
-                value = value[:100] + "..."
+            if isinstance(value, str) and len(value) > MAX_DISPLAY_CHUNK_PREVIEW:
+                value = value[:MAX_DISPLAY_CHUNK_PREVIEW] + "..."
             print(f"  {key}: {value}")
 
     # Print chunk previews
     print("\n\033[1mContent Chunks:\033[0m")
-    for i, chunk in enumerate(chunks[:3]):  # Show first 3 chunks
-        print(f"  Chunk {i + 1}/{len(chunks)}: {chunk[:100]}...")
+    for i, chunk in enumerate(chunks[:MAX_CHUNKS_BEFORE_MORE_NOTICE]):
+        print(f"  Chunk {i + 1}/{len(chunks)}: {chunk[:MAX_DISPLAY_CHUNK_PREVIEW]}...")
 
-    if len(chunks) > 3:
-        print(f"  ... and {len(chunks) - 3} more chunks")
+    if len(chunks) > MAX_CHUNKS_BEFORE_MORE_NOTICE:
+        print(f"  ... and {len(chunks) - MAX_CHUNKS_BEFORE_MORE_NOTICE} more chunks")
+    print("-" * 40)
 
     # Print HTML path if available
     if "html_path" in metadata:
@@ -1846,19 +1923,19 @@ def cmd_scrape_search(db: Any, args: str) -> None:
     # Print results
     print(f"Found {len(results)} matches:")
 
-    for i, result in enumerate(results[:10]):  # Show top 10 results
+    for i, result in enumerate(results[:MAX_DISPLAY_RESULTS_PREVIEW]):  # Show top 10 results
         print(f"\n\033[1m{i + 1}. {result['title']}\033[0m")
         print(f"   URL: {result['url']}")
         print(f"   ID: {result['id']}")
 
         # Print chunk matches
-        for j, chunk in enumerate(result["chunks"][:3]):  # Show top 3 chunk matches
+        for j, chunk in enumerate(result["chunks"][:MAX_CHUNKS_BEFORE_MORE_NOTICE]):
             print(f"   Match {j + 1}: ...{chunk['highlight']}...")
 
-        if len(result["chunks"]) > 3:
-            print(f"   ... and {len(result['chunks']) - 3} more matches")
+        if len(result["chunks"]) > MAX_CHUNKS_BEFORE_MORE_NOTICE:
+            print(f"   ... and {len(result['chunks']) - MAX_CHUNKS_BEFORE_MORE_NOTICE} more matches")
 
-    if len(results) > 10:
-        print(f"\n... and {len(results) - 10} more results")
+    if len(results) > MAX_RESULTS_BEFORE_MORE_NOTICE:
+        print(f"\n... and {len(results) - MAX_RESULTS_BEFORE_MORE_NOTICE} more results")
 
     print("\nTo see details for a specific result, use: scrape:status <id>")

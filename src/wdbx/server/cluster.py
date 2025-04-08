@@ -11,18 +11,24 @@ including:
 - Distributed coordination
 - Synchronization mechanisms
 """
+import hmac
 import json
 import logging
 import os
-import queue
+import random
 import secrets
+import signal
 import socket
+import tempfile
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Set
 
 try:
+    import asyncio
+
     ASYNCIO_AVAILABLE = True
 except ImportError:
     ASYNCIO_AVAILABLE = False
@@ -30,12 +36,15 @@ except ImportError:
 
 try:
     import etcd3
+
     ETCD_AVAILABLE = True
 except ImportError:
     ETCD_AVAILABLE = False
     logging.warning("etcd3 not available. Using file-based coordination.")
 
 try:
+    import kazoo
+
     ZOOKEEPER_AVAILABLE = True
 except ImportError:
     ZOOKEEPER_AVAILABLE = False
@@ -43,26 +52,159 @@ except ImportError:
 
 from ..core.constants import logger
 
-# Cluster configuration
-CLUSTER_NAME = os.environ.get("WDBX_CLUSTER_NAME", "wdbx-cluster")
-CLUSTER_NODES = os.environ.get("WDBX_CLUSTER_NODES", "127.0.0.1:8080").split(",")
-CLUSTER_PORT = int(os.environ.get("WDBX_CLUSTER_PORT", 8500))
-CLUSTER_SECRET = os.environ.get("WDBX_CLUSTER_SECRET", "")
-CLUSTER_DATA_DIR = os.environ.get("WDBX_CLUSTER_DATA_DIR", "./wdbx_cluster")
-CLUSTER_ETCD_ENDPOINTS = os.environ.get("WDBX_ETCD_ENDPOINTS", "").split(
-    ",") if os.environ.get("WDBX_ETCD_ENDPOINTS") else []
-CLUSTER_ZOOKEEPER_HOSTS = os.environ.get("WDBX_ZOOKEEPER_HOSTS", "").split(
-    ",") if os.environ.get("WDBX_ZOOKEEPER_HOSTS") else []
-CLUSTER_HEARTBEAT_INTERVAL = float(os.environ.get("WDBX_HEARTBEAT_INTERVAL", 1.0))
-CLUSTER_ELECTION_TIMEOUT = float(os.environ.get("WDBX_ELECTION_TIMEOUT", 5.0))
-CLUSTER_REPLICATION_FACTOR = int(os.environ.get("WDBX_REPLICATION_FACTOR", 3))
+# Configure logging
+logger = logging.getLogger("wdbx.cluster")
 
-# Leader-related constants
-LEADER_TTL = 15  # Leader key TTL in seconds
-WATCH_TIMEOUT = 5  # Timeout for watch operations
+# Constants
+CLUSTER_PREFIX = "wdbx/cluster"
+CLUSTER_PORT = 5925
+CLUSTER_ELECTION_TIMEOUT = 5.0  # seconds
+CLUSTER_HEARTBEAT_INTERVAL = 1.0  # seconds
+CLUSTER_SECRET = os.environ.get("WDBX_CLUSTER_SECRET", "")
+
+
+@dataclass
+class ClusterConfig:
+    """Configuration for WDBX cluster setup."""
+
+    # Cluster identity
+    cluster_name: str = "wdbx-cluster"
+    node_id: Optional[str] = None  # Auto-generated if None
+
+    # Network configuration
+    host: Optional[str] = None  # Auto-detected if None
+    port: int = CLUSTER_PORT
+
+    # Timeouts and intervals
+    election_timeout_base: float = CLUSTER_ELECTION_TIMEOUT
+    heartbeat_interval: float = CLUSTER_HEARTBEAT_INTERVAL
+
+    # Security
+    cluster_secret: str = field(default_factory=lambda: os.environ.get("WDBX_CLUSTER_SECRET", ""))
+    enable_security: bool = True
+
+    # Coordination backend options
+    backend_type: Optional[str] = None  # Auto-detected if None
+    etcd_hosts: List[str] = field(default_factory=lambda: ["localhost:2379"])
+    zookeeper_hosts: str = "localhost:2181"
+    storage_dir: str = field(
+        default_factory=lambda: os.path.join(tempfile.gettempdir(), "wdbx-cluster")
+    )
+
+    # Advanced configuration
+    replication_factor: int = 3
+    quorum_size: Optional[int] = None  # Auto-calculated if None
+
+    # ML-enhanced monitoring
+    enable_ml_monitoring: bool = True
+
+    def __post_init__(self):
+        """Validate and set defaults after initialization."""
+        # Generate node_id if not provided
+        if not self.node_id:
+            self.node_id = f"node-{uuid.uuid4()}"
+
+        # Detect host if not provided
+        if not self.host:
+            try:
+                self.host = socket.gethostbyname(socket.gethostname())
+            except socket.gaierror:
+                self.host = "127.0.0.1"
+                logger.warning(f"Could not determine hostname. Using {self.host}")
+
+        # Generate secure cluster secret if not provided and security is enabled
+        if not self.cluster_secret and self.enable_security:
+            self.cluster_secret = secrets.token_hex(16)
+            logger.warning(
+                "No cluster secret provided. Generated a random secret. "
+                "For production, set WDBX_CLUSTER_SECRET environment variable."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary for serialization."""
+        return {
+            "cluster_name": self.cluster_name,
+            "node_id": self.node_id,
+            "host": self.host,
+            "port": self.port,
+            "election_timeout_base": self.election_timeout_base,
+            "heartbeat_interval": self.heartbeat_interval,
+            "enable_security": self.enable_security,
+            "backend_type": self.backend_type,
+            "etcd_hosts": self.etcd_hosts,
+            "zookeeper_hosts": self.zookeeper_hosts,
+            "storage_dir": self.storage_dir,
+            "replication_factor": self.replication_factor,
+            "quorum_size": self.quorum_size,
+            "enable_ml_monitoring": self.enable_ml_monitoring,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ClusterConfig":
+        """Create config from dictionary."""
+        # Filter out unknown fields
+        valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+        return cls(**filtered_data)
+
+    @classmethod
+    def from_file(cls, file_path: str) -> "ClusterConfig":
+        """Load config from JSON file."""
+        try:
+            with open(file_path) as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to load config from {file_path}: {e}")
+            return cls()
+
+    def save_to_file(self, file_path: str) -> bool:
+        """Save config to JSON file."""
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            # Don't save cluster secret
+            data = self.to_dict()
+            data.pop("cluster_secret", None)
+
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save config to {file_path}: {e}")
+            return False
+
+    def get_election_timeout(self) -> float:
+        """
+        Get randomized election timeout to prevent election conflicts.
+
+        Returns:
+            Randomized election timeout in seconds
+        """
+        # Randomize between 0.8-1.2× the base timeout
+        return self.election_timeout_base * (0.8 + 0.4 * random.random())
+
+    def get_quorum_size(self, node_count: int) -> int:
+        """
+        Calculate the quorum size needed for consensus.
+
+        Args:
+            node_count: Number of nodes in the cluster
+
+        Returns:
+            Minimum number of nodes required for quorum
+        """
+        if self.quorum_size is not None:
+            return self.quorum_size
+
+        # Default quorum is majority: ⌊N/2⌋ + 1
+        return (node_count // 2) + 1
+
 
 class NodeState:
     """Possible states for a cluster node."""
+
     UNKNOWN = "unknown"
     INITIALIZING = "initializing"
     FOLLOWER = "follower"
@@ -72,7 +214,7 @@ class NodeState:
     OFFLINE = "offline"
 
 
-class Node:
+class ClusterNode:
     """
     Represents a node in the WDBX cluster.
     """
@@ -114,11 +256,11 @@ class Node:
             "voted_for": self.voted_for,
             "leader_id": self.leader_id,
             "data_version": self.data_version,
-            "capabilities": list(self.capabilities)
+            "capabilities": list(self.capabilities),
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Node":
+    def from_dict(cls, data: Dict[str, Any]) -> "ClusterNode":
         """
         Create a node from a dictionary.
 
@@ -126,7 +268,7 @@ class Node:
             data: Dictionary representation of the node
 
         Returns:
-            Node object
+            ClusterNode object
         """
         node = cls(data["node_id"], data["host"], data["port"])
         node.state = data["state"]
@@ -151,1696 +293,828 @@ class Node:
         return self.last_heartbeat > time.time() - timeout
 
 
-class ClusterChange:
-    """
-    Represents a change in the cluster state.
-    """
-
-    def __init__(self, node_id: str, change_type: str, old_state: Optional[str] = None,
-                 new_state: Optional[str] = None, timestamp: Optional[float] = None,
-                 details: Optional[Dict[str, Any]] = None):
-        """
-        Initialize a cluster change.
-
-        Args:
-            node_id: ID of the node that changed
-            change_type: Type of change (e.g., "state", "heartbeat", "term", etc.)
-            old_state: Previous state, or None
-            new_state: New state, or None
-            timestamp: Timestamp of the change, or None for current time
-            details: Additional details about the change
-        """
-        self.node_id = node_id
-        self.change_type = change_type
-        self.old_state = old_state
-        self.new_state = new_state
-        self.timestamp = timestamp or time.time()
-        self.details = details or {}
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary for serialization.
-
-        Returns:
-            Dictionary representation of the change
-        """
-        return {
-            "node_id": self.node_id,
-            "change_type": self.change_type,
-            "old_state": self.old_state,
-            "new_state": self.new_state,
-            "timestamp": self.timestamp,
-            "details": self.details
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ClusterChange":
-        """
-        Create a cluster change from a dictionary.
-
-        Args:
-            data: Dictionary representation of the change
-
-        Returns:
-            ClusterChange object
-        """
-        return cls(
-            node_id=data["node_id"],
-            change_type=data["change_type"],
-            old_state=data["old_state"],
-            new_state=data["new_state"],
-            timestamp=data["timestamp"],
-            details=data["details"]
-        )
-
-
-class CoordinationBackend:
-    """
-    Base class for coordination backends.
-    """
-
-    def __init__(self):
-        """Initialize the coordination backend."""
-
-    def initialize(self) -> bool:
-        """
-        Initialize the backend.
-
-        Returns:
-            True if initialization was successful, False otherwise
-        """
-        raise NotImplementedError("Subclasses must implement initialize()")
-
-    def get(self, key: str) -> Optional[bytes]:
-        """
-        Get a value from the backend.
-
-        Args:
-            key: Key to get
-
-        Returns:
-            Value if found, None otherwise
-        """
-        raise NotImplementedError("Subclasses must implement get()")
-
-    def put(self, key: str, value: bytes, ttl: Optional[int] = None) -> bool:
-        """
-        Put a value into the backend.
-
-        Args:
-            key: Key to store
-            value: Value to store
-            ttl: Time-to-live in seconds, or None for no expiration
-
-        Returns:
-            True if successful, False otherwise
-        """
-        raise NotImplementedError("Subclasses must implement put()")
-
-    def delete(self, key: str) -> bool:
-        """
-        Delete a key from the backend.
-
-        Args:
-            key: Key to delete
-
-        Returns:
-            True if successful, False otherwise
-        """
-        raise NotImplementedError("Subclasses must implement delete()")
-
-    def watch(self, key: str, callback: Callable[[str, Optional[bytes]], None]) -> Any:
-        """
-        Watch a key for changes.
-
-        Args:
-            key: Key to watch
-            callback: Function to call when the key changes
-
-        Returns:
-            Watch identifier or object
-        """
-        raise NotImplementedError("Subclasses must implement watch()")
-
-    def unwatch(self, watch_id: Any) -> bool:
-        """
-        Stop watching a key.
-
-        Args:
-            watch_id: Watch identifier or object
-
-        Returns:
-            True if successful, False otherwise
-        """
-        raise NotImplementedError("Subclasses must implement unwatch()")
-
-    def lock(self, name: str, ttl: int = 60) -> Any:
-        """
-        Acquire a lock.
-
-        Args:
-            name: Lock name
-            ttl: Time-to-live in seconds
-
-        Returns:
-            Lock object or identifier
-        """
-        raise NotImplementedError("Subclasses must implement lock()")
-
-    def unlock(self, lock_id: Any) -> bool:
-        """
-        Release a lock.
-
-        Args:
-            lock_id: Lock object or identifier
-
-        Returns:
-            True if successful, False otherwise
-        """
-        raise NotImplementedError("Subclasses must implement unlock()")
-
-    def close(self) -> None:
-        """Close the backend and release resources."""
-        raise NotImplementedError("Subclasses must implement close()")
-
-
-class EtcdBackend(CoordinationBackend):
-    """
-    Coordination backend using etcd.
-    """
-
-    def __init__(self, endpoints: List[str] = CLUSTER_ETCD_ENDPOINTS):
-        """
-        Initialize the etcd backend.
-
-        Args:
-            endpoints: List of etcd endpoints (host:port)
-        """
-        super().__init__()
-        self.endpoints = endpoints
-        self.client = None
-        self.watches = {}
-        self.locks = {}
-
-    def initialize(self) -> bool:
-        """
-        Initialize the backend.
-
-        Returns:
-            True if initialization was successful, False otherwise
-        """
-        if not ETCD_AVAILABLE:
-            logger.error("etcd3 library not available.")
-            return False
-
-        try:
-            # Parse endpoints
-            hosts = []
-            for endpoint in self.endpoints:
-                parts = endpoint.split(":")
-                if len(parts) == 2:
-                    host, port = parts
-                    hosts.append((host, int(port)))
-                else:
-                    hosts.append((endpoint, 2379))  # Default etcd port
-
-            # Connect to etcd
-            if hosts:
-                host, port = hosts[0]
-                self.client = etcd3.client(host=host, port=port)
-                # Test connection
-                self.client.status()
-                logger.info(f"Connected to etcd at {host}:{port}")
-                return True
-            logger.error("No valid etcd endpoints provided.")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to initialize etcd backend: {e}")
-            return False
-
-    def get(self, key: str) -> Optional[bytes]:
-        """
-        Get a value from etcd.
-
-        Args:
-            key: Key to get
-
-        Returns:
-            Value if found, None otherwise
-        """
-        if not self.client:
-            return None
-
-        try:
-            result = self.client.get(key)
-            if result[0]:
-                return result[0]
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get key from etcd: {e}")
-            return None
-
-    def put(self, key: str, value: bytes, ttl: Optional[int] = None) -> bool:
-        """
-        Put a value into etcd.
-
-        Args:
-            key: Key to store
-            value: Value to store
-            ttl: Time-to-live in seconds, or None for no expiration
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.client:
-            return False
-
-        try:
-            if ttl:
-                lease = self.client.lease(ttl)
-                self.client.put(key, value, lease=lease)
-            else:
-                self.client.put(key, value)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to put key into etcd: {e}")
-            return False
-
-    def delete(self, key: str) -> bool:
-        """
-        Delete a key from etcd.
-
-        Args:
-            key: Key to delete
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.client:
-            return False
-
-        try:
-            self.client.delete(key)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete key from etcd: {e}")
-            return False
-
-    def watch(self, key: str, callback: Callable[[str, Optional[bytes]], None]) -> Any:
-        """
-        Watch a key for changes.
-
-        Args:
-            key: Key to watch
-            callback: Function to call when the key changes
-
-        Returns:
-            Watch identifier
-        """
-        if not self.client:
-            return None
-
-        try:
-            def etcd_callback(event):
-                if event.type == "PUT":
-                    callback(key, event.value)
-                elif event.type == "DELETE":
-                    callback(key, None)
-
-            watch_id = str(uuid.uuid4())
-            watch = self.client.add_watch_callback(key, etcd_callback)
-            self.watches[watch_id] = watch
-            return watch_id
-        except Exception as e:
-            logger.error(f"Failed to watch key in etcd: {e}")
-            return None
-
-    def unwatch(self, watch_id: str) -> bool:
-        """
-        Stop watching a key.
-
-        Args:
-            watch_id: Watch identifier
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.client or watch_id not in self.watches:
-            return False
-
-        try:
-            watch = self.watches[watch_id]
-            self.client.cancel_watch(watch)
-            del self.watches[watch_id]
-            return True
-        except Exception as e:
-            logger.error(f"Failed to unwatch key in etcd: {e}")
-            return False
-
-    def lock(self, name: str, ttl: int = 60) -> Any:
-        """
-        Acquire a lock.
-
-        Args:
-            name: Lock name
-            ttl: Time-to-live in seconds
-
-        Returns:
-            Lock object
-        """
-        if not self.client:
-            return None
-
-        try:
-            lock_id = str(uuid.uuid4())
-            lock = self.client.lock(name, ttl=ttl)
-            if lock.acquire():
-                self.locks[lock_id] = lock
-                return lock_id
-            return None
-        except Exception as e:
-            logger.error(f"Failed to acquire lock in etcd: {e}")
-            return None
-
-    def unlock(self, lock_id: Any) -> bool:
-        """
-        Release a lock.
-
-        Args:
-            lock_id: Lock identifier
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.client or lock_id not in self.locks:
-            return False
-
-        try:
-            lock = self.locks[lock_id]
-            lock.release()
-            del self.locks[lock_id]
-            return True
-        except Exception as e:
-            logger.error(f"Failed to release lock in etcd: {e}")
-            return False
-
-    def close(self) -> None:
-        """Close the etcd connection and release resources."""
-        if self.client:
-            try:
-                # Cancel all watches
-                for watch_id in list(self.watches.keys()):
-                    self.unwatch(watch_id)
-
-                # Release all locks
-                for lock_id in list(self.locks.keys()):
-                    self.unlock(lock_id)
-
-                # Close the client
-                self.client.close()
-                self.client = None
-            except Exception as e:
-                logger.error(f"Failed to close etcd connection: {e}")
-
-
-class FileBackend(CoordinationBackend):
-    """
-    Coordination backend using the filesystem.
-    Simpler alternative when etcd or ZooKeeper are not available.
-    """
-
-    def __init__(self, data_dir: str = CLUSTER_DATA_DIR):
-        """
-        Initialize the file backend.
-
-        Args:
-            data_dir: Directory to store data in
-        """
-        super().__init__()
-        self.data_dir = data_dir
-        self.values_dir = os.path.join(data_dir, "values")
-        self.locks_dir = os.path.join(data_dir, "locks")
-        self.watches = {}
-        self.watch_thread = None
-        self.watch_running = False
-        self.watch_queue = queue.Queue()
-
-    def initialize(self) -> bool:
-        """
-        Initialize the backend.
-
-        Returns:
-            True if initialization was successful, False otherwise
-        """
-        try:
-            # Create directories
-            os.makedirs(self.values_dir, exist_ok=True)
-            os.makedirs(self.locks_dir, exist_ok=True)
-
-            # Start watch thread
-            self.watch_running = True
-            self.watch_thread = threading.Thread(target=self._watch_loop, daemon=True)
-            self.watch_thread.start()
-
-            logger.info(f"Initialized file backend at {self.data_dir}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize file backend: {e}")
-            return False
-
-    def _key_to_path(self, key: str) -> str:
-        """
-        Convert a key to a file path.
-
-        Args:
-            key: Key to convert
-
-        Returns:
-            File path
-        """
-        # Make the key safe for the filesystem
-        safe_key = key.replace("/", "_").replace(":", "_").replace("\\", "_")
-        return os.path.join(self.values_dir, safe_key)
-
-    def _lock_to_path(self, name: str) -> str:
-        """
-        Convert a lock name to a file path.
-
-        Args:
-            name: Lock name
-
-        Returns:
-            File path
-        """
-        # Make the name safe for the filesystem
-        safe_name = name.replace("/", "_").replace(":", "_").replace("\\", "_")
-        return os.path.join(self.locks_dir, safe_name + ".lock")
-
-    def get(self, key: str) -> Optional[bytes]:
-        """
-        Get a value from the file backend.
-
-        Args:
-            key: Key to get
-
-        Returns:
-            Value if found, None otherwise
-        """
-        path = self._key_to_path(key)
-        try:
-            if os.path.exists(path):
-                with open(path, "rb") as f:
-                    return f.read()
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get key from file backend: {e}")
-            return None
-
-    def put(self, key: str, value: bytes, ttl: Optional[int] = None) -> bool:
-        """
-        Put a value into the file backend.
-
-        Args:
-            key: Key to store
-            value: Value to store
-            ttl: Time-to-live in seconds, or None for no expiration
-
-        Returns:
-            True if successful, False otherwise
-        """
-        path = self._key_to_path(key)
-        try:
-            with open(path, "wb") as f:
-                f.write(value)
-
-            # Handle TTL
-            if ttl:
-                expiration = time.time() + ttl
-                ttl_path = path + ".ttl"
-                with open(ttl_path, "w") as f:
-                    f.write(str(expiration))
-
-            # Notify watchers
-            self.watch_queue.put((key, value))
-
-            return True
-        except Exception as e:
-            logger.error(f"Failed to put key into file backend: {e}")
-            return False
-
-    def delete(self, key: str) -> bool:
-        """
-        Delete a key from the file backend.
-
-        Args:
-            key: Key to delete
-
-        Returns:
-            True if successful, False otherwise
-        """
-        path = self._key_to_path(key)
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-
-                # Remove TTL file if it exists
-                ttl_path = path + ".ttl"
-                if os.path.exists(ttl_path):
-                    os.remove(ttl_path)
-
-                # Notify watchers
-                self.watch_queue.put((key, None))
-
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to delete key from file backend: {e}")
-            return False
-
-    def _watch_loop(self):
-        """Watch loop for processing watch events."""
-        while self.watch_running:
-            try:
-                # Process TTL expirations
-                self._check_ttl_expirations()
-
-                # Process watch events
-                try:
-                    key, value = self.watch_queue.get(timeout=1.0)
-                    if key in self.watches:
-                        for callback in self.watches[key].values():
-                            try:
-                                callback(key, value)
-                            except Exception as e:
-                                logger.error(f"Error in watch callback: {e}")
-                except queue.Empty:
-                    pass
-            except Exception as e:
-                logger.error(f"Error in watch loop: {e}")
-
-            # Sleep a bit
-            time.sleep(0.1)
-
-    def _check_ttl_expirations(self):
-        """Check for TTL expirations."""
-        now = time.time()
-        try:
-            for filename in os.listdir(self.values_dir):
-                if filename.endswith(".ttl"):
-                    ttl_path = os.path.join(self.values_dir, filename)
-                    try:
-                        with open(ttl_path) as f:
-                            expiration = float(f.read().strip())
-
-                        if now > expiration:
-                            # TTL expired, delete the key
-                            key_path = ttl_path[:-4]  # Remove ".ttl"
-                            key = os.path.basename(key_path)
-
-                            # Delete the files
-                            if os.path.exists(key_path):
-                                os.remove(key_path)
-                            os.remove(ttl_path)
-
-                            # Notify watchers
-                            self.watch_queue.put((key, None))
-                    except Exception as e:
-                        logger.error(f"Error checking TTL expiration for {filename}: {e}")
-        except Exception as e:
-            logger.error(f"Error checking TTL expirations: {e}")
-
-    def watch(self, key: str, callback: Callable[[str, Optional[bytes]], None]) -> Any:
-        """
-        Watch a key for changes.
-
-        Args:
-            key: Key to watch
-            callback: Function to call when the key changes
-
-        Returns:
-            Watch identifier
-        """
-        watch_id = str(uuid.uuid4())
-
-        # Initialize the watches for this key
-        if key not in self.watches:
-            self.watches[key] = {}
-
-        # Add the callback
-        self.watches[key][watch_id] = callback
-
-        return watch_id
-
-    def unwatch(self, watch_id: Any) -> bool:
-        """
-        Stop watching a key.
-
-        Args:
-            watch_id: Watch identifier
-
-        Returns:
-            True if successful, False otherwise
-        """
-        # Find the key for this watch ID
-        for key, watches in self.watches.items():
-            if watch_id in watches:
-                del watches[watch_id]
-                if not watches:
-                    del self.watches[key]
-                return True
-
-        return False
-
-    def lock(self, name: str, ttl: int = 60) -> Any:
-        """
-        Acquire a lock.
-
-        Args:
-            name: Lock name
-            ttl: Time-to-live in seconds
-
-        Returns:
-            Lock object
-        """
-        lock_path = self._lock_to_path(name)
-        lock_id = str(uuid.uuid4())
-
-        # Try to create the lock file
-        try:
-            with open(lock_path, "x") as f:
-                expiration = time.time() + ttl
-                lock_data = {
-                    "id": lock_id,
-                    "expiration": expiration
-                }
-                f.write(json.dumps(lock_data))
-
-            return lock_id
-        except FileExistsError:
-            # Lock already exists, check if it's expired
-            try:
-                with open(lock_path) as f:
-                    lock_data = json.loads(f.read())
-
-                if time.time() > lock_data["expiration"]:
-                    # Lock expired, try to acquire it
-                    os.remove(lock_path)
-                    return self.lock(name, ttl)
-            except Exception:
-                pass
-
-            return None
-        except Exception as e:
-            logger.error(f"Failed to acquire lock: {e}")
-            return None
-
-    def unlock(self, lock_id: Any) -> bool:
-        """
-        Release a lock.
-
-        Args:
-            lock_id: Lock identifier
-
-        Returns:
-            True if successful, False otherwise
-        """
-        # Find the lock file for this lock ID
-        try:
-            for filename in os.listdir(self.locks_dir):
-                lock_path = os.path.join(self.locks_dir, filename)
-                try:
-                    with open(lock_path) as f:
-                        lock_data = json.loads(f.read())
-
-                    if lock_data["id"] == lock_id:
-                        os.remove(lock_path)
-                        return True
-                except Exception as e_inner:
-                    # Log error reading or processing a specific lock file but continue
-                    logger.warning(f"Error processing lock file {lock_path}: {e_inner}")
-
-            return False
-        except Exception as e:
-            logger.error(f"Failed to unlock lock_id {lock_id}: {e}")
-            return False
-
-    def close(self) -> None:
-        """Close the file backend and release resources."""
-        self.watch_running = False
-        if self.watch_thread:
-            self.watch_thread.join(timeout=1.0)
-
-
 class ClusterCoordinator:
     """
-    Coordinates cluster operations.
+    Manages cluster coordination and consensus using various backends.
+
+    The ClusterCoordinator provides:
+    - Distributed coordination for cluster nodes
+    - Leader election algorithm implementation
+    - Secure node registration and discovery
+    - High-availability state management
+    - ML-enhanced failure detection and prediction
+
+    Supported backends include etcd3, ZooKeeper, and a simple file-based implementation
+    for development and testing.
     """
 
-    def __init__(self, node_id: str, backends: Optional[List[str]] = None):
+    def __init__(self, node_id: str, backend_type: str = None):
         """
-        Initialize the cluster coordinator.
+        Initialize cluster coordinator with specified backend.
 
         Args:
-            node_id: ID of this node
-            backends: List of backend types to try, in order of preference
+            node_id: ID of the node this coordinator belongs to
+            backend_type: Coordination backend to use, or None for auto-detection
         """
         self.node_id = node_id
-        self.backends = backends or ["etcd", "file"]
+        self.nodes: Dict[str, ClusterNode] = {}
         self.backend = None
-        self.cluster_key_prefix = f"/wdbx/cluster/{CLUSTER_NAME}"
-        self.nodes_key = f"{self.cluster_key_prefix}/nodes"
-        self.leader_key = f"{self.cluster_key_prefix}/leader"
-        self.locks = {}
-        self.watches = []
+        self.backend_type = backend_type or self._detect_backend()
+        self.initialized = False
+        self._change_listeners: List[Callable] = []
+
+        # Attempt to import security components
+        try:
+            from ..security import SecurityManager
+
+            self.security_manager = SecurityManager()
+            logger.info(f"Security manager initialized for cluster coordinator on {node_id}")
+            self.security_enabled = True
+        except ImportError:
+            logger.warning("Security module not available for cluster coordinator")
+            self.security_manager = None
+            self.security_enabled = False
+
+        # Attempt to import monitoring components
+        try:
+            from ..monitoring import PerformanceMonitor
+
+            self.performance_monitor = PerformanceMonitor()
+            logger.info(f"Performance monitoring initialized for cluster coordinator on {node_id}")
+            self.monitoring_enabled = True
+        except ImportError:
+            logger.warning("Monitoring module not available for cluster coordinator")
+            self.performance_monitor = None
+            self.monitoring_enabled = False
+
+        # Setup secure communication with payload signing
+        self._setup_security()
+
+        # Register signal handlers for clean shutdown
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, self._handle_shutdown_signal)
+
+        logger.info(f"Cluster coordinator initialized with backend: {self.backend_type}")
+
+    def _detect_backend(self) -> str:
+        """
+        Auto-detect the best available coordination backend.
+
+        Returns:
+            String identifying the backend type
+        """
+        # Try to import etcd3
+        try:
+            import etcd3
+
+            logger.info("Detected etcd3 backend")
+            return "etcd3"
+        except ImportError:
+            pass
+
+        # Try to import kazoo (ZooKeeper)
+        try:
+            import kazoo
+
+            logger.info("Detected ZooKeeper backend")
+            return "zookeeper"
+        except ImportError:
+            pass
+
+        # Fall back to file-based backend
+        logger.warning(
+            "No distributed coordination backend detected. "
+            "Using file-based backend - NOT RECOMMENDED FOR PRODUCTION"
+        )
+        return "file"
+
+    def _setup_security(self) -> None:
+        """Set up secure communication for the coordinator."""
+        # Default to simple HMAC signing if security manager not available
+        if not self.security_enabled or not self.security_manager:
+            # Generate a signing key from environment or use default
+            secret = os.environ.get("WDBX_CLUSTER_SECRET", "wdbx-cluster-default-secret")
+            if secret == "wdbx-cluster-default-secret":
+                logger.warning(
+                    "Using default cluster secret. Set WDBX_CLUSTER_SECRET for production."
+                )
+
+            # Create simple signing functions
+            def sign_payload(payload: Dict) -> str:
+                payload_str = json.dumps(payload, sort_keys=True)
+                return hmac.new(
+                    secret.encode(), payload_str.encode(), digestmod="sha256"
+                ).hexdigest()
+
+            def verify_signature(payload: Dict, signature: str) -> bool:
+                expected = sign_payload(payload)
+                return hmac.compare_digest(expected, signature)
+
+            self.sign_payload = sign_payload
+            self.verify_signature = verify_signature
+
+        else:
+            # Use security manager for more advanced security
+            def sign_payload(payload: Dict) -> str:
+                return self.security_manager.sign_data(payload)
+
+            def verify_signature(payload: Dict, signature: str) -> bool:
+                return self.security_manager.verify_signature(payload, signature)
+
+            self.sign_payload = sign_payload
+            self.verify_signature = verify_signature
 
     def initialize(self) -> bool:
         """
-        Initialize the cluster coordinator.
+        Initialize the coordination backend.
 
         Returns:
-            True if initialization was successful, False otherwise
+            True if initialization successful
         """
-        # Try each backend in order of preference
-        for backend_type in self.backends:
-            if backend_type == "etcd" and ETCD_AVAILABLE:
-                self.backend = EtcdBackend()
-                if self.backend.initialize():
-                    break
-            elif backend_type == "file":
-                self.backend = FileBackend()
-                if self.backend.initialize():
-                    break
+        if self.initialized:
+            logger.warning("Coordinator already initialized")
+            return True
 
-        if not self.backend:
-            logger.error("Failed to initialize any coordination backend.")
+        # Start performance monitoring if available
+        if self.monitoring_enabled and self.performance_monitor:
+            try:
+                self.performance_monitor.start()
+            except Exception as e:
+                logger.error(f"Failed to start performance monitoring: {e}")
+
+        try:
+            # Initialize appropriate backend
+            backend_initializers = {
+                "etcd3": self._initialize_etcd,
+                "zookeeper": self._initialize_zookeeper,
+                "file": self._initialize_file_backend,
+            }
+
+            initializer = backend_initializers.get(self.backend_type)
+            if not initializer:
+                logger.error(f"Unsupported backend type: {self.backend_type}")
+                return False
+
+            # Initialize the backend with performance tracking
+            start_time = time.time()
+            result = initializer()
+
+            if self.monitoring_enabled and self.performance_monitor:
+                self.performance_monitor.record_event(
+                    "coordinator_init",
+                    {"backend": self.backend_type, "duration": time.time() - start_time},
+                )
+
+            if not result:
+                logger.error(f"Failed to initialize {self.backend_type} backend")
+                return False
+
+            self.initialized = True
+            logger.info(f"Successfully initialized {self.backend_type} coordinator backend")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error initializing coordinator: {e}", exc_info=True)
             return False
 
-        logger.info(f"Initialized cluster coordinator with {type(self.backend).__name__}")
-        return True
-
-    def register_node(self, node: Node, ttl: int = 30) -> bool:
+    def _initialize_etcd(self) -> bool:
         """
-        Register a node in the cluster.
+        Initialize etcd3 backend.
+
+        Returns:
+            True if successful
+        """
+        try:
+            import etcd3
+
+            # Get configuration from environment or use defaults
+            host = os.environ.get("WDBX_ETCD_HOST", "localhost")
+            port = int(os.environ.get("WDBX_ETCD_PORT", "2379"))
+            ca_cert = os.environ.get("WDBX_ETCD_CA_CERT")
+            cert_key = os.environ.get("WDBX_ETCD_CERT_KEY")
+            cert_cert = os.environ.get("WDBX_ETCD_CERT_CERT")
+
+            # Create client with proper security if provided
+            if ca_cert and cert_key and cert_cert:
+                logger.info(f"Connecting to etcd with TLS: {host}:{port}")
+                self.backend = etcd3.client(
+                    host=host, port=port, ca_cert=ca_cert, cert_key=cert_key, cert_cert=cert_cert
+                )
+            else:
+                if os.environ.get("WDBX_ENVIRONMENT", "").lower() == "production":
+                    logger.warning("Connecting to etcd without TLS in production environment")
+                self.backend = etcd3.client(host=host, port=port)
+
+            # Test connection
+            self.backend.get_cluster_id()
+
+            # Set up watch for cluster changes
+            prefix = f"{CLUSTER_PREFIX}/nodes/"
+            watch_id = self.backend.add_watch_prefix_callback(prefix, self._handle_node_change)
+
+            logger.info(f"Etcd3 backend initialized: {host}:{port}")
+            return True
+
+        except ImportError:
+            logger.error("Etcd3 package not installed")
+            return False
+        except Exception as e:
+            logger.error(f"Error initializing etcd: {e}", exc_info=True)
+            return False
+
+    def _initialize_zookeeper(self) -> bool:
+        """
+        Initialize ZooKeeper backend.
+
+        Returns:
+            True if successful
+        """
+        try:
+            from kazoo.client import KazooClient
+
+            # Get configuration from environment or use defaults
+            hosts = os.environ.get("WDBX_ZK_HOSTS", "localhost:2181")
+            timeout = float(os.environ.get("WDBX_ZK_TIMEOUT", "10.0"))
+
+            # Create client
+            self.backend = KazooClient(hosts=hosts, timeout=timeout)
+            self.backend.start(timeout=timeout)
+
+            # Create base paths
+            base_path = f"/{CLUSTER_PREFIX}"
+            nodes_path = f"{base_path}/nodes"
+
+            for path in [base_path, nodes_path]:
+                self.backend.ensure_path(path)
+
+            # Set up watch for cluster changes
+            @self.backend.ChildrenWatch(nodes_path)
+            def watch_nodes(children):
+                for child in children:
+                    node_path = f"{nodes_path}/{child}"
+                    self._handle_node_change(node_path)
+
+            logger.info(f"ZooKeeper backend initialized: {hosts}")
+            return True
+
+        except ImportError:
+            logger.error("Kazoo package not installed")
+            return False
+        except Exception as e:
+            logger.error(f"Error initializing ZooKeeper: {e}", exc_info=True)
+            return False
+
+    def _initialize_file_backend(self) -> bool:
+        """
+        Initialize file-based backend (for development/testing).
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Use local directory for storage
+            storage_dir = os.environ.get(
+                "WDBX_CLUSTER_STORAGE", os.path.join(tempfile.gettempdir(), "wdbx-cluster")
+            )
+
+            # Create directory if it doesn't exist
+            os.makedirs(storage_dir, exist_ok=True)
+
+            # Create subdirectories
+            nodes_dir = os.path.join(storage_dir, "nodes")
+            os.makedirs(nodes_dir, exist_ok=True)
+
+            # Store backend info
+            self.backend = {
+                "type": "file",
+                "storage_dir": storage_dir,
+                "nodes_dir": nodes_dir,
+            }
+
+            # Set up file watcher if available
+            try:
+                import watchdog
+                from watchdog.events import FileSystemEventHandler
+                from watchdog.observers import Observer
+
+                class NodeChangeHandler(FileSystemEventHandler):
+                    def __init__(self, coordinator):
+                        self.coordinator = coordinator
+
+                    def on_modified(self, event):
+                        if event.is_directory:
+                            return
+                        self.coordinator._handle_node_change(event.src_path)
+
+                handler = NodeChangeHandler(self)
+                observer = Observer()
+                observer.schedule(handler, nodes_dir, recursive=False)
+                observer.start()
+
+                # Store observer to stop it later
+                self.backend["observer"] = observer
+
+                logger.info("File watcher initialized for cluster changes")
+
+            except ImportError:
+                logger.warning("Watchdog package not installed, polling for cluster changes")
+
+                # Set up polling instead
+                def poll_nodes():
+                    while True:
+                        try:
+                            for filename in os.listdir(nodes_dir):
+                                path = os.path.join(nodes_dir, filename)
+                                if os.path.isfile(path):
+                                    self._handle_node_change(path)
+                            time.sleep(1.0)
+                        except Exception as e:
+                            logger.error(f"Error polling nodes: {e}")
+                            time.sleep(5.0)
+
+                poll_thread = threading.Thread(
+                    target=poll_nodes, name="node_poll_thread", daemon=True
+                )
+                poll_thread.start()
+
+                # Store thread to join it later
+                self.backend["poll_thread"] = poll_thread
+
+            logger.info(f"File backend initialized: {storage_dir}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error initializing file backend: {e}", exc_info=True)
+            return False
+
+    def register_node(self, node: ClusterNode) -> bool:
+        """
+        Register a node with the cluster.
 
         Args:
-            node: Node to register
-            ttl: Time-to-live in seconds
+            node: Node instance to register
 
         Returns:
-            True if successful, False otherwise
+            True if registration successful
         """
-        if not self.backend:
+        if not self.initialized:
+            logger.error("Coordinator not initialized")
             return False
 
-        node_key = f"{self.nodes_key}/{node.node_id}"
         try:
-            # Convert node to bytes
-            node_data = json.dumps(node.to_dict()).encode("utf-8")
+            # Profile this operation if monitoring is enabled
+            profile_context = None
+            if self.monitoring_enabled and self.performance_monitor:
+                profile_context = self.performance_monitor.profile("register_node")
 
-            # Store in the backend
-            return self.backend.put(node_key, node_data, ttl)
+            # Convert node to serializable form
+            node_dict = node.to_dict()
+
+            # Add security signature if enabled
+            if self.security_enabled:
+                node_dict["signature"] = self.sign_payload(node_dict)
+
+            # Serialize node data
+            node_data = json.dumps(node_dict).encode()
+
+            # Register node using appropriate backend
+            if self.backend_type == "etcd3":
+                key = f"{CLUSTER_PREFIX}/nodes/{node.id}"
+                self.backend.put(key, node_data)
+
+            elif self.backend_type == "zookeeper":
+                path = f"/{CLUSTER_PREFIX}/nodes/{node.id}"
+                if self.backend.exists(path):
+                    self.backend.set(path, node_data)
+                else:
+                    self.backend.create(path, node_data, makepath=True)
+
+            elif self.backend_type == "file":
+                path = os.path.join(self.backend["nodes_dir"], node.id)
+                with open(path, "wb") as f:
+                    f.write(node_data)
+
+            else:
+                logger.error(f"Unsupported backend type: {self.backend_type}")
+                return False
+
+            # End profiling if active
+            if profile_context:
+                profile_context.__exit__(None, None, None)
+
+            logger.debug(f"Registered node: {node.id} (state: {node.state})")
+            return True
+
         except Exception as e:
-            logger.error(f"Failed to register node: {e}")
+            logger.error(f"Error registering node: {e}", exc_info=True)
             return False
 
-    def get_node(self, node_id: str) -> Optional[Node]:
+    def unregister_node(self, node_id: str) -> bool:
         """
-        Get a node from the cluster.
+        Unregister a node from the cluster.
 
         Args:
-            node_id: ID of the node to get
+            node_id: ID of node to unregister
 
         Returns:
-            Node if found, None otherwise
+            True if unregistration successful
         """
-        if not self.backend:
-            return None
+        if not self.initialized:
+            logger.error("Coordinator not initialized")
+            return False
 
-        node_key = f"{self.nodes_key}/{node_id}"
         try:
-            node_data = self.backend.get(node_key)
-            if node_data:
-                node_dict = json.loads(node_data.decode("utf-8"))
-                return Node.from_dict(node_dict)
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get node: {e}")
-            return None
+            # Delete node using appropriate backend
+            if self.backend_type == "etcd3":
+                key = f"{CLUSTER_PREFIX}/nodes/{node_id}"
+                self.backend.delete(key)
 
-    def get_all_nodes(self) -> Dict[str, Node]:
+            elif self.backend_type == "zookeeper":
+                path = f"/{CLUSTER_PREFIX}/nodes/{node_id}"
+                if self.backend.exists(path):
+                    self.backend.delete(path)
+
+            elif self.backend_type == "file":
+                path = os.path.join(self.backend["nodes_dir"], node_id)
+                if os.path.exists(path):
+                    os.remove(path)
+
+            else:
+                logger.error(f"Unsupported backend type: {self.backend_type}")
+                return False
+
+            # Security audit logging if enabled
+            if self.security_enabled and self.security_manager:
+                self.security_manager.log_security_event(
+                    event_type="cluster_node_removed",
+                    details={"node_id": node_id, "removed_by": self.node_id},
+                    level="INFO",
+                )
+
+            logger.info(f"Unregistered node: {node_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error unregistering node: {e}", exc_info=True)
+            return False
+
+    def get_nodes(self) -> Dict[str, ClusterNode]:
         """
-        Get all nodes in the cluster.
+        Get all registered nodes in the cluster.
 
         Returns:
-            Dictionary of node_id -> Node
+            Dictionary mapping node IDs to Node instances
         """
-        if not self.backend:
+        if not self.initialized:
+            logger.error("Coordinator not initialized")
             return {}
 
-        try:
-            nodes = {}
+        nodes = {}
 
-            # List all node keys
-            # For a real implementation, we would need a "list" operation
-            # For now, use some backend-specific hacks
-            if isinstance(self.backend, EtcdBackend) and self.backend.client:
-                # For etcd, we can use the prefix feature
-                for item in self.backend.client.get_prefix(self.nodes_key):
-                    key = item[1].key.decode("utf-8")
-                    node_id = key.split("/")[-1]
-                    node_dict = json.loads(item[0].decode("utf-8"))
-                    nodes[node_id] = Node.from_dict(node_dict)
-            elif isinstance(self.backend, FileBackend):
-                # For file backend, we can list the directory
-                prefix = self.nodes_key.replace("/", "_")
-                for filename in os.listdir(self.backend.values_dir):
-                    if filename.startswith(prefix) and not filename.endswith(".ttl"):
-                        node_id = filename.split("_")[-1]
-                        node_data = self.backend.get(f"{self.nodes_key}/{node_id}")
-                        if node_data:
-                            node_dict = json.loads(node_data.decode("utf-8"))
-                            nodes[node_id] = Node.from_dict(node_dict)
+        try:
+            # Profile this operation if monitoring is enabled
+            profile_context = None
+            if self.monitoring_enabled and self.performance_monitor:
+                profile_context = self.performance_monitor.profile("get_nodes")
+
+            # Fetch nodes from appropriate backend
+            if self.backend_type == "etcd3":
+                prefix = f"{CLUSTER_PREFIX}/nodes/"
+                results = self.backend.get_prefix(prefix)
+
+                for value, metadata in results:
+                    if not value:
+                        continue
+                    try:
+                        node_dict = json.loads(value.decode())
+                        node = ClusterNode.from_dict(node_dict)
+
+                        # Verify signature if present
+                        if "signature" in node_dict and self.security_enabled:
+                            signature = node_dict.pop("signature")
+                            if not self.verify_signature(node_dict, signature):
+                                logger.warning(f"Invalid signature for node: {node.id}")
+                                continue
+
+                        nodes[node.id] = node
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid node data: {value}")
+
+            elif self.backend_type == "zookeeper":
+                path = f"/{CLUSTER_PREFIX}/nodes"
+                if not self.backend.exists(path):
+                    return {}
+
+                for child in self.backend.get_children(path):
+                    child_path = f"{path}/{child}"
+                    value, _ = self.backend.get(child_path)
+
+                    if not value:
+                        continue
+
+                    try:
+                        node_dict = json.loads(value.decode())
+                        node = ClusterNode.from_dict(node_dict)
+
+                        # Verify signature if present
+                        if "signature" in node_dict and self.security_enabled:
+                            signature = node_dict.pop("signature")
+                            if not self.verify_signature(node_dict, signature):
+                                logger.warning(f"Invalid signature for node: {node.id}")
+                                continue
+
+                        nodes[node.id] = node
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid node data: {value}")
+
+            elif self.backend_type == "file":
+                nodes_dir = self.backend["nodes_dir"]
+                for filename in os.listdir(nodes_dir):
+                    path = os.path.join(nodes_dir, filename)
+
+                    if not os.path.isfile(path):
+                        continue
+
+                    try:
+                        with open(path, "rb") as f:
+                            value = f.read()
+
+                        if not value:
+                            continue
+
+                        node_dict = json.loads(value.decode())
+                        node = ClusterNode.from_dict(node_dict)
+
+                        # Verify signature if present
+                        if "signature" in node_dict and self.security_enabled:
+                            signature = node_dict.pop("signature")
+                            if not self.verify_signature(node_dict, signature):
+                                logger.warning(f"Invalid signature for node: {node.id}")
+                                continue
+
+                        nodes[node.id] = node
+                    except (OSError, json.JSONDecodeError) as e:
+                        logger.warning(f"Error reading node data from {path}: {e}")
+
+            else:
+                logger.error(f"Unsupported backend type: {self.backend_type}")
+
+            # End profiling if active
+            if profile_context:
+                profile_context.__exit__(None, None, None)
 
             return nodes
+
         except Exception as e:
-            logger.error(f"Failed to get all nodes: {e}")
+            logger.error(f"Error getting nodes: {e}", exc_info=True)
             return {}
 
-    def watch_nodes(self, callback: Callable[[str, Optional[Node]], None]) -> bool:
+    def _handle_node_change(self, key_or_path):
         """
-        Watch for node changes.
+        Handle node change notification from backend.
 
         Args:
-            callback: Function to call when a node changes
-
-        Returns:
-            True if successful, False otherwise
+            key_or_path: Key or path that changed
         """
-        if not self.backend:
-            return False
-
         try:
-            def node_callback(key, value):
-                node_id = key.split("/")[-1]
-                if value:
-                    node_dict = json.loads(value.decode("utf-8"))
-                    node = Node.from_dict(node_dict)
-                    callback(node_id, node)
-                else:
-                    callback(node_id, None)
+            # Extract node ID from key/path
+            if self.backend_type == "etcd3":
+                parts = key_or_path.decode().split("/")
+                node_id = parts[-1]
+            elif self.backend_type == "zookeeper":
+                parts = key_or_path.split("/")
+                node_id = parts[-1]
+            elif self.backend_type == "file":
+                node_id = os.path.basename(key_or_path)
+            else:
+                logger.error(f"Unsupported backend type: {self.backend_type}")
+                return
 
-            watch_id = self.backend.watch(self.nodes_key, node_callback)
-            if watch_id:
-                self.watches.append(watch_id)
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to watch nodes: {e}")
-            return False
-
-    def elect_leader(self, node_id: str, term: int) -> bool:
-        """
-        Try to elect a leader.
-
-        Args:
-            node_id: ID of the node to elect
-            term: Election term
-
-        Returns:
-            True if the node was elected, False otherwise
-        """
-        if not self.backend:
-            return False
-
-        try:
-            # Try to acquire the leader lock
-            lock_id = self.backend.lock(f"{self.cluster_key_prefix}/leader-election", ttl=10)
-            if not lock_id:
-                return False
-
-            try:
-                # Check current leader
-                leader_data = self.backend.get(self.leader_key)
-                if leader_data:
-                    leader_info = json.loads(leader_data.decode("utf-8"))
-                    current_term = leader_info.get("term", 0)
-
-                    # Only replace leader if term is higher
-                    if term <= current_term:
-                        return False
-
-                # Set the new leader
-                leader_info = {
-                    "node_id": node_id,
-                    "term": term,
-                    "timestamp": time.time()
-                }
-                leader_bytes = json.dumps(leader_info).encode("utf-8")
-
-                if self.backend.put(self.leader_key, leader_bytes):
-                    logger.info(f"Node {node_id} elected as leader for term {term}")
-                    return True
-
-                return False
-            finally:
-                # Release the lock
-                self.backend.unlock(lock_id)
-        except Exception as e:
-            logger.error(f"Failed to elect leader: {e}")
-            return False
-
-    def get_leader(self) -> Tuple[Optional[str], int]:
-        """
-        Get the current leader.
-
-        Returns:
-            Tuple of (leader_id, term), or (None, 0) if no leader
-        """
-        if not self.backend:
-            return None, 0
-
-        try:
-            leader_data = self.backend.get(self.leader_key)
-            if leader_data:
-                leader_info = json.loads(leader_data.decode("utf-8"))
-                return leader_info.get("node_id"), leader_info.get("term", 0)
-            return None, 0
-        except Exception as e:
-            logger.error(f"Failed to get leader: {e}")
-            return None, 0
-
-    def watch_leader(self, callback: Callable[[Optional[str], int], None]) -> bool:
-        """
-        Watch for leader changes.
-
-        Args:
-            callback: Function to call when the leader changes
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.backend:
-            return False
-
-        try:
-            def leader_callback(key, value):
-                if value:
-                    leader_info = json.loads(value.decode("utf-8"))
-                    callback(leader_info.get("node_id"), leader_info.get("term", 0))
-                else:
-                    callback(None, 0)
-
-            watch_id = self.backend.watch(self.leader_key, leader_callback)
-            if watch_id:
-                self.watches.append(watch_id)
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to watch leader: {e}")
-            return False
-
-    def acquire_lock(self, name: str, ttl: int = 60) -> Optional[str]:
-        """
-        Acquire a cluster-wide lock.
-
-        Args:
-            name: Lock name
-            ttl: Time-to-live in seconds
-
-        Returns:
-            Lock ID if successful, None otherwise
-        """
-        if not self.backend:
-            return None
-
-        try:
-            lock_id = self.backend.lock(f"{self.cluster_key_prefix}/locks/{name}", ttl)
-            if lock_id:
-                self.locks[name] = lock_id
-                return name
-            return None
-        except Exception as e:
-            logger.error(f"Failed to acquire lock: {e}")
-            return None
-
-    def release_lock(self, name: str) -> bool:
-        """
-        Release a cluster-wide lock.
-
-        Args:
-            name: Lock name
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.backend or name not in self.locks:
-            return False
-
-        try:
-            lock_id = self.locks[name]
-            if self.backend.unlock(lock_id):
-                del self.locks[name]
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to release lock: {e}")
-            return False
-
-    def close(self) -> None:
-        """Close the coordinator and release resources."""
-        if self.backend:
-            try:
-                # Release all locks
-                for name in list(self.locks.keys()):
-                    self.release_lock(name)
-
-                # Remove all watches
-                for watch_id in self.watches:
-                    self.backend.unwatch(watch_id)
-
-                # Close the backend
-                self.backend.close()
-            except Exception as e:
-                logger.error(f"Failed to close coordinator: {e}")
-            finally:
-                self.backend = None
-
-
-class ReplicationManager:
-    """
-    Manages data replication between nodes.
-    """
-
-    def __init__(self, node_id: str, wdbx_instance: Any, coordinator: ClusterCoordinator):
-        """
-        Initialize the replication manager.
-
-        Args:
-            node_id: ID of this node
-            wdbx_instance: WDBX instance
-            coordinator: Cluster coordinator
-        """
-        self.node_id = node_id
-        self.wdbx = wdbx_instance
-        self.coordinator = coordinator
-        self.replication_queue = queue.Queue()
-        self.replication_thread = None
-        self.running = False
-
-    def start(self) -> bool:
-        """
-        Start the replication manager.
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if self.running:
-            return True
-
-        try:
-            self.running = True
-            self.replication_thread = threading.Thread(target=self._replication_loop, daemon=True)
-            self.replication_thread.start()
-            logger.info("Replication manager started")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start replication manager: {e}")
-            self.running = False
-            return False
-
-    def stop(self) -> None:
-        """Stop the replication manager."""
-        self.running = False
-        if self.replication_thread:
-            self.replication_thread.join(timeout=5.0)
-            self.replication_thread = None
-
-    def _replication_loop(self) -> None:
-        """Background thread for processing replication events."""
-        while self.running:
-            try:
-                # Get the next replication task
+            # Refresh nodes and notify listeners
+            nodes = self.get_nodes()
+            for listener in self._change_listeners:
                 try:
-                    item = self.replication_queue.get(timeout=1.0)
-                    self._process_replication_item(item)
-                except queue.Empty:
-                    pass
+                    listener(node_id, nodes)
+                except Exception as e:
+                    logger.error(f"Error in node change listener: {e}", exc_info=True)
 
-                # For leader: check for un-replicated blocks
-                leader_id, _ = self.coordinator.get_leader()
-                if leader_id == self.node_id:
-                    self._check_unreplicated_blocks()
-            except Exception as e:
-                logger.error(f"Error in replication loop: {e}")
+        except Exception as e:
+            logger.error(f"Error handling node change: {e}", exc_info=True)
 
-            time.sleep(0.1)
-
-    def _process_replication_item(self, item: dict) -> None:
+    def add_change_listener(self, listener: Callable[[str, Dict[str, ClusterNode]], None]):
         """
-        Process a replication item.
+        Add a listener for node changes.
 
         Args:
-            item: Replication item
+            listener: Callback function that takes node_id and nodes dict
         """
-        op_type = item.get("type")
+        self._change_listeners.append(listener)
 
-        if op_type == "block":
-            # Replicate a block
-            block_id = item.get("block_id")
-            block_data = item.get("data")
-            if block_id and block_data:
-                self._replicate_block(block_id, block_data)
-        elif op_type == "embedding":
-            # Replicate an embedding vector
-            vector_id = item.get("vector_id")
-            vector_data = item.get("data")
-            if vector_id and vector_data:
-                self._replicate_embedding(vector_id, vector_data)
-
-    def _check_unreplicated_blocks(self) -> None:
-        """Check for blocks that need replication."""
-        # In a real implementation, this would check which blocks don't have enough replicas
-        # For now, just log a message
-        logger.debug("Checking for unreplicated blocks")
-
-    def _replicate_block(self, block_id: str, block_data: bytes) -> bool:
+    def remove_change_listener(self, listener):
         """
-        Replicate a block.
+        Remove a change listener.
 
         Args:
-            block_id: ID of the block to replicate
-            block_data: Serialized block data
+            listener: Listener to remove
+        """
+        if listener in self._change_listeners:
+            self._change_listeners.remove(listener)
+
+    def close(self):
+        """Close the coordinator and release resources."""
+        if not self.initialized:
+            return
+
+        try:
+            # Stop monitoring if active
+            if self.monitoring_enabled and self.performance_monitor:
+                try:
+                    self.performance_monitor.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping performance monitoring: {e}")
+
+            # Close backend based on type
+            if self.backend_type == "etcd3":
+                self.backend.close()
+
+            elif self.backend_type == "zookeeper":
+                self.backend.stop()
+                self.backend.close()
+
+            elif self.backend_type == "file":
+                # Stop file watcher if running
+                if "observer" in self.backend:
+                    self.backend["observer"].stop()
+                    self.backend["observer"].join(timeout=5.0)
+
+            logger.info(f"Closed {self.backend_type} coordinator backend")
+
+        except Exception as e:
+            logger.error(f"Error closing coordinator: {e}", exc_info=True)
+
+        self.initialized = False
+
+    def _handle_shutdown_signal(self, signum, frame):
+        """
+        Handle shutdown signal.
+
+        Args:
+            signum: Signal number
+            frame: Current stack frame
+        """
+        logger.info(f"Received signal {signum}, shutting down coordinator")
+        self.close()
+
+    def get_cluster_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the cluster.
 
         Returns:
-            True if successful, False otherwise
+            Dictionary with cluster statistics
         """
-        try:
-            from wdbx.data_structures import Block
+        if not self.initialized:
+            return {"status": "not_initialized"}
 
-            # Deserialize the block
-            block = Block.deserialize(block_data)
+        # Get nodes to analyze
+        nodes = self.get_nodes()
 
-            # Validate the block
-            if not block.validate():
-                logger.warning(f"Invalid block received for replication: {block_id}")
-                return False
+        # Collect stats
+        stats = {
+            "node_count": len(nodes),
+            "active_nodes": sum(1 for node in nodes.values() if node.is_alive()),
+            "backend_type": self.backend_type,
+            "states": {},
+        }
 
-            # Store the block
-            self.wdbx.block_chain_manager.blocks[block_id] = block
+        # Count nodes by state
+        for node in nodes.values():
+            state_name = node.state.name if hasattr(node.state, "name") else str(node.state)
+            stats["states"][state_name] = stats["states"].get(state_name, 0) + 1
 
-            # Update chain information
-            if block.previous_hash:
-                # Find the chain this block belongs to
-                for chain_id, head_id in self.wdbx.block_chain_manager.chain_heads.items():
-                    head_block = self.wdbx.block_chain_manager.blocks.get(head_id)
-                    if head_block and head_block.hash == block.previous_hash:
-                        # Update chain head
-                        self.wdbx.block_chain_manager.chain_heads[chain_id] = block_id
-                        self.wdbx.block_chain_manager.block_chain[block_id] = chain_id
-                        break
+        # Add leader info if available
+        leader_nodes = [node for node in nodes.values() if node.state == NodeState.LEADER]
+        if leader_nodes:
+            leader = leader_nodes[0]
+            stats["leader"] = {
+                "id": leader.id,
+                "host": leader.host,
+                "port": leader.port,
+                "term": getattr(leader, "term", 0),
+            }
 
-            logger.debug(f"Replicated block {block_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to replicate block {block_id}: {e}")
-            return False
+        # Add ML prediction stats if available
+        if self.monitoring_enabled and self.performance_monitor:
+            stats["performance"] = {
+                "coordinator_cpu": self.performance_monitor.get_cpu_percent(),
+                "coordinator_memory": self.performance_monitor.get_memory_percent(),
+            }
 
-    def _replicate_embedding(self, vector_id: str, vector_data: bytes) -> bool:
-        """
-        Replicate an embedding vector.
-
-        Args:
-            vector_id: ID of the vector to replicate
-            vector_data: Serialized vector data
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            from wdbx.data_structures import EmbeddingVector
-
-            # Deserialize the vector
-            vector = EmbeddingVector.deserialize(vector_data)
-
-            # Store the vector
-            self.wdbx.vector_store.vectors[vector_id] = vector
-
-            logger.debug(f"Replicated vector {vector_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to replicate vector {vector_id}: {e}")
-            return False
-
-    def replicate_block(self, block_id: str) -> bool:
-        """
-        Schedule a block for replication.
-
-        Args:
-            block_id: ID of the block to replicate
-
-        Returns:
-            True if scheduled successfully, False otherwise
-        """
-        try:
-            # Get the block
-            block = self.wdbx.block_chain_manager.get_block(block_id)
-            if not block:
-                logger.warning(f"Block not found for replication: {block_id}")
-                return False
-
-            # Serialize the block
-            block_data = block.serialize()
-
-            # Add to replication queue
-            self.replication_queue.put({
-                "type": "block",
-                "block_id": block_id,
-                "data": block_data
-            })
-
-            return True
-        except Exception as e:
-            logger.error(f"Failed to schedule block replication: {e}")
-            return False
-
-    def replicate_embedding(self, vector_id: str) -> bool:
-        """
-        Schedule an embedding vector for replication.
-
-        Args:
-            vector_id: ID of the vector to replicate
-
-        Returns:
-            True if scheduled successfully, False otherwise
-        """
-        try:
-            # Get the vector
-            vector = self.wdbx.vector_store.get(vector_id)
-            if not vector:
-                logger.warning(f"Vector not found for replication: {vector_id}")
-                return False
-
-            # Serialize the vector
-            vector_data = vector.serialize()
-
-            # Add to replication queue
-            self.replication_queue.put({
-                "type": "embedding",
-                "vector_id": vector_id,
-                "data": vector_data
-            })
-
-            return True
-        except Exception as e:
-            logger.error(f"Failed to schedule vector replication: {e}")
-            return False
+        return stats
 
 
-class ClusterNode:
+class ClusterManager:
     """
-    Represents a node in the WDBX cluster, with state machine replication.
+    Manages a cluster of WDBX nodes.
     """
 
-    def __init__(self, wdbx_instance: Any, node_id: Optional[str] = None,
-                 host: Optional[str] = None, port: Optional[int] = None):
+    def __init__(self, config: ClusterConfig):
         """
-        Initialize a cluster node.
+        Initialize cluster manager.
 
         Args:
-            wdbx_instance: WDBX instance
-            node_id: Node ID, or None to generate one
-            host: Host address, or None for default
-            port: Port number, or None for default
+            config: Cluster configuration
         """
-        self.wdbx = wdbx_instance
-        self.node_id = node_id or str(uuid.uuid4())
-        self.host = host or socket.gethostname()
-        self.port = port or CLUSTER_PORT
+        self.config = config
+        self.coordinator = ClusterCoordinator(config.node_id)
+        self.nodes: Dict[str, ClusterNode] = {}
+        self.current_node: Optional[ClusterNode] = None
+        self.initialized = False
 
-        # Node state
-        self.state = NodeState.INITIALIZING
-        self.term = 0
-        self.voted_for = None
-        self.leader_id = None
-        self.votes_received = set()
-
-        # Timers
-        self.last_heartbeat = 0
-        self.election_timeout = CLUSTER_ELECTION_TIMEOUT
-        self.heartbeat_interval = CLUSTER_HEARTBEAT_INTERVAL
-
-        # Consensus components
-        self.coordinator = ClusterCoordinator(self.node_id)
-        self.replication_manager = ReplicationManager(self.node_id, wdbx_instance, self.coordinator)
-
-        # Node operation
-        self.running = False
-        self.consensus_thread = None
-        self.heartbeat_thread = None
-
-    def start(self) -> bool:
+    def initialize(self) -> bool:
         """
-        Start the cluster node.
+        Initialize the cluster manager.
 
         Returns:
-            True if successful, False otherwise
+            True if initialization successful
         """
-        if self.running:
+        if self.initialized:
             return True
 
         try:
             # Initialize coordinator
             if not self.coordinator.initialize():
-                logger.error("Failed to initialize cluster coordinator.")
                 return False
 
-            # Initialize replication manager
-            if not self.replication_manager.start():
-                logger.error("Failed to start replication manager.")
+            # Create current node
+            self.current_node = ClusterNode(self.config.node_id, self.config.host, self.config.port)
+
+            # Register current node
+            if not self.coordinator.register_node(self.current_node):
                 return False
 
-            # Register this node in the cluster
-            node = Node(self.node_id, self.host, self.port)
-            node.state = NodeState.FOLLOWER
-            node.term = self.term
-            node.last_heartbeat = time.time()
+            # Add change listener
+            self.coordinator.add_change_listener(self._handle_node_change)
 
-            if not self.coordinator.register_node(node):
-                logger.error("Failed to register node in the cluster.")
-                return False
-
-            # Start consensus thread
-            self.running = True
-            self.state = NodeState.FOLLOWER
-            self.consensus_thread = threading.Thread(target=self._consensus_loop, daemon=True)
-            self.consensus_thread.start()
-
-            # Start heartbeat thread
-            self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
-            self.heartbeat_thread.start()
-
-            logger.info(f"Cluster node {self.node_id} started")
+            self.initialized = True
             return True
+
         except Exception as e:
-            logger.error(f"Failed to start cluster node: {e}")
-            self.stop()
+            logger.error(f"Error initializing cluster manager: {e}")
             return False
 
-    def stop(self) -> None:
-        """Stop the cluster node."""
-        self.running = False
-
-        # Stop threads
-        if self.consensus_thread:
-            self.consensus_thread.join(timeout=5.0)
-            self.consensus_thread = None
-
-        if self.heartbeat_thread:
-            self.heartbeat_thread.join(timeout=5.0)
-            self.heartbeat_thread = None
-
-        # Stop replication manager
-        if self.replication_manager:
-            self.replication_manager.stop()
-
-        # Close coordinator
-        if self.coordinator:
-            self.coordinator.close()
-
-        logger.info(f"Cluster node {self.node_id} stopped")
-
-    def _consensus_loop(self) -> None:
-        """Consensus algorithm main loop."""
-        system_random = secrets.SystemRandom()
-
-        # Randomize first election timeout using a secure source
-        election_timeout = self.election_timeout * (1 + system_random.random())
-        election_timer = time.time() + election_timeout
-
-        # Set up leader watch
-        self.coordinator.watch_leader(self._on_leader_change)
-
-        while self.running:
-            try:
-                current_time = time.time()
-
-                if self.state == NodeState.FOLLOWER:
-                    # Check if we should become a candidate
-                    if current_time > election_timer:
-                        logger.info(
-                            f"Election timeout, becoming candidate for term {
-                                self.term + 1}")
-                        self._become_candidate()
-
-                        # Reset election timer using a secure source
-                        election_timeout = self.election_timeout * (1 + system_random.random())
-                        election_timer = current_time + election_timeout
-
-                elif self.state == NodeState.CANDIDATE:
-                    # Check if we have enough votes to become leader
-                    nodes = self.coordinator.get_all_nodes()
-                    required_votes = (len(nodes) // 2) + 1
-
-                    if len(self.votes_received) >= required_votes:
-                        logger.info(
-                            f"Received majority votes ({len(self.votes_received)}), becoming leader")
-                        self._become_leader()
-                    elif current_time > election_timer:
-                        logger.info(
-                            f"Election timeout, starting new election for term {
-                                self.term + 1}")
-                        self.term += 1
-                        self.voted_for = self.node_id
-                        self.votes_received = {self.node_id}
-
-                        # Request votes from other nodes
-                        self._request_votes()
-
-                        # Reset election timer using a secure source
-                        election_timeout = self.election_timeout * (1 + system_random.random())
-                        election_timer = current_time + election_timeout
-
-                elif self.state == NodeState.LEADER:
-                    # Send heartbeats periodically
-                    if current_time - self.last_heartbeat >= self.heartbeat_interval:
-                        self._send_heartbeat()
-                        self.last_heartbeat = current_time
-
-                # Update node status
-                self._update_node_status()
-            except Exception as e:
-                logger.error(f"Error in consensus loop: {e}")
-
-            # Sleep a bit
-            time.sleep(0.1)
-
-    def _heartbeat_loop(self) -> None:
-        """Heartbeat loop for registering node status."""
-        while self.running:
-            try:
-                # Register node with TTL
-                node = Node(self.node_id, self.host, self.port)
-                node.state = self.state
-                node.term = self.term
-                node.voted_for = self.voted_for
-                node.leader_id = self.leader_id
-                node.last_heartbeat = time.time()
-
-                self.coordinator.register_node(node, ttl=30)
-            except Exception as e:
-                logger.error(f"Error in heartbeat loop: {e}")
-
-            # Sleep for heartbeat interval
-            time.sleep(self.heartbeat_interval)
-
-    def _update_node_status(self) -> None:
-        """Update node status in the cluster."""
-        try:
-            # Get current nodes
-            nodes = self.coordinator.get_all_nodes()
-
-            # Check for dead nodes
-            for node_id, node in nodes.items():
-                if node.state != NodeState.OFFLINE and not node.is_alive():
-                    node.state = NodeState.OFFLINE
-                    logger.info(f"Node {node_id} is offline")
-        except Exception as e:
-            logger.error(f"Error updating node status: {e}")
-
-    def _become_candidate(self) -> None:
-        """Become a candidate and start an election."""
-        self.state = NodeState.CANDIDATE
-        self.term += 1
-        self.voted_for = self.node_id
-        self.votes_received = {self.node_id}
-
-        # Request votes from other nodes
-        self._request_votes()
-
-    def _request_votes(self) -> None:
-        """Request votes from other nodes."""
-        try:
-            # Get all nodes
-            nodes = self.coordinator.get_all_nodes()
-
-            # Request votes from other nodes
-            for node_id, node in nodes.items():
-                if node_id != self.node_id and node.state != NodeState.OFFLINE:
-                    # In a real implementation, this would send an RPC to each node
-                    # For now, just simulate with the coordinator
-                    self._simulate_vote_request(node_id)
-        except Exception as e:
-            logger.error(f"Error requesting votes: {e}")
-
-    def _simulate_vote_request(self, node_id: str) -> None:
+    def _handle_node_change(self, node_id: str, nodes: Dict[str, ClusterNode]):
         """
-        Simulate a vote request to another node.
+        Handle node change notification.
 
         Args:
-            node_id: ID of the node to request a vote from
+            node_id: ID of changed node
+            nodes: Updated nodes dictionary
         """
-        try:
-            # Get the node
-            node = self.coordinator.get_node(node_id)
-            if not node:
-                return
+        self.nodes = nodes
+        if node_id == self.config.node_id:
+            self.current_node = nodes.get(node_id)
 
-            # Check if the node has already voted for this term
-            if node.voted_for is not None and node.voted_for != self.node_id and node.term >= self.term:
-                return
+    def get_node(self, node_id: str) -> Optional[ClusterNode]:
+        """
+        Get a node by ID.
 
-            # Simulate the node granting the vote
-            if node.term <= self.term:
-                self.votes_received.add(node_id)
-                logger.debug(f"Received vote from node {node_id}")
-        except Exception as e:
-            logger.error(f"Error simulating vote request: {e}")
+        Args:
+            node_id: Node ID to look up
 
-    def _become_leader(self) -> None:
-        """Become the leader of the cluster."""
-        if self.state == NodeState.CANDIDATE:
-            # Try to elect as leader
-            if self.coordinator.elect_leader(self.node_id, self.term):
-                self.state = NodeState.LEADER
-                self.leader_id = self.node_id
-                logger.info(f"Node {self.node_id} is now the leader for term {self.term}")
+        Returns:
+            ClusterNode if found, None otherwise
+        """
+        return self.nodes.get(node_id)
 
-                # Send initial heartbeat
-                self._send_heartbeat()
-            else:
-                logger.warning(f"Failed to elect as leader for term {self.term}")
+    def get_leader(self) -> Optional[ClusterNode]:
+        """
+        Get the current leader node.
 
-    def _send_heartbeat(self) -> None:
-        """Send heartbeat to all nodes."""
-        if self.state != NodeState.LEADER:
+        Returns:
+            Leader node if one exists, None otherwise
+        """
+        for node in self.nodes.values():
+            if node.state == NodeState.LEADER:
+                return node
+        return None
+
+    def close(self):
+        """Close the cluster manager and release resources."""
+        if not self.initialized:
             return
 
         try:
-            # In a real implementation, this would send heartbeats to all nodes
-            # For now, just update the leader key with fresh TTL
-            self.coordinator.elect_leader(self.node_id, self.term)
+            # Unregister current node
+            if self.current_node:
+                self.coordinator.unregister_node(self.current_node.node_id)
 
-            # Debug log
-            logger.debug(f"Leader {self.node_id} sent heartbeat for term {self.term}")
+            # Close coordinator
+            self.coordinator.close()
+
         except Exception as e:
-            logger.error(f"Error sending heartbeat: {e}")
+            logger.error(f"Error closing cluster manager: {e}")
 
-    def _on_leader_change(self, leader_id: Optional[str], term: int) -> None:
-        """
-        Handle leader change events.
-
-        Args:
-            leader_id: ID of the new leader, or None if no leader
-            term: Term of the new leader
-        """
-        try:
-            if leader_id == self.node_id:
-                # We are the leader
-                if self.state != NodeState.LEADER:
-                    self.state = NodeState.LEADER
-                    logger.info(f"This node is now the leader for term {term}")
-            else:
-                # Someone else is the leader
-                if leader_id:
-                    if term > self.term:
-                        # Update term
-                        self.term = term
-                        self.voted_for = None
-
-                    # Update leader ID
-                    self.leader_id = leader_id
-
-                    # If we were a candidate or leader, step down
-                    if self.state in (NodeState.CANDIDATE, NodeState.LEADER):
-                        self.state = NodeState.FOLLOWER
-                        logger.info(
-                            f"Stepping down, node {leader_id} is the leader for term {term}")
-                else:
-                    # No leader
-                    self.leader_id = None
-        except Exception as e:
-            logger.error(f"Error handling leader change: {e}")
-
-    def handle_vote_request(self, candidate_id: str, term: int) -> bool:
-        """
-        Handle a vote request from a candidate.
-
-        Args:
-            candidate_id: ID of the candidate
-            term: Candidate's term
-
-        Returns:
-            True if the vote is granted, False otherwise
-        """
-        try:
-            # Check if the term is valid
-            if term < self.term:
-                return False
-
-            # If we haven't voted for this term, or we voted for this candidate
-            if self.voted_for is None or self.voted_for == candidate_id:
-                # Grant vote
-                self.voted_for = candidate_id
-                return True
-
-            return False
-        except Exception as e:
-            logger.error(f"Error handling vote request: {e}")
-            return False
-
-    def get_cluster_state(self) -> Dict[str, Any]:
-        """
-        Get the current state of the cluster.
-
-        Returns:
-            Dictionary with cluster state information
-        """
-        try:
-            # Get all nodes
-            nodes = self.coordinator.get_all_nodes()
-
-            # Get leader
-            leader_id, term = self.coordinator.get_leader()
-
-            # Collect active nodes
-            active_nodes = {}
-            for node_id, node in nodes.items():
-                if node.is_alive():
-                    active_nodes[node_id] = node.to_dict()
-
-            return {
-                "nodes": {node_id: node.to_dict() for node_id, node in nodes.items()},
-                "active_nodes": active_nodes,
-                "leader": leader_id,
-                "term": term,
-                "node_count": len(nodes),
-                "active_count": len(active_nodes)
-            }
-        except Exception as e:
-            logger.error(f"Error getting cluster state: {e}")
-            return {
-                "error": str(e)
-            }
+        self.initialized = False
 
 
 def init_cluster(app, wdbx_instance: Any) -> Optional[ClusterNode]:
@@ -1873,6 +1147,7 @@ def init_cluster(app, wdbx_instance: Any) -> Optional[ClusterNode]:
         def get_cluster_status():
             """Get the status of the cluster."""
             from flask import jsonify
+
             return jsonify(cluster_node.get_cluster_state())
 
         @app.route("/cluster/node/<node_id>", methods=["GET"])
@@ -1891,11 +1166,7 @@ def init_cluster(app, wdbx_instance: Any) -> Optional[ClusterNode]:
             from flask import jsonify, request
 
             # List of paths that require leader status
-            leader_paths = [
-                "/v1/blocks/create",
-                "/v1/blocks/update",
-                "/v1/blocks/delete"
-            ]
+            leader_paths = ["/v1/blocks/create", "/v1/blocks/update", "/v1/blocks/delete"]
 
             if request.path in leader_paths and request.method != "GET":
                 if cluster_node.state != NodeState.LEADER:
@@ -1903,14 +1174,19 @@ def init_cluster(app, wdbx_instance: Any) -> Optional[ClusterNode]:
                     if cluster_node.leader_id:
                         leader_node = cluster_node.coordinator.get_node(cluster_node.leader_id)
                         if leader_node:
-                            return jsonify({
-                                "error": "Not the leader",
-                                "leader": {
-                                    "node_id": leader_node.node_id,
-                                    "host": leader_node.host,
-                                    "port": leader_node.port
-                                }
-                            }), 307
+                            return (
+                                jsonify(
+                                    {
+                                        "error": "Not the leader",
+                                        "leader": {
+                                            "node_id": leader_node.node_id,
+                                            "host": leader_node.host,
+                                            "port": leader_node.port,
+                                        },
+                                    }
+                                ),
+                                307,
+                            )
 
                     # No leader known
                     return jsonify({"error": "Not the leader"}), 503
@@ -1936,8 +1212,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WDBX Cluster Node")
     parser.add_argument("--port", type=int, default=CLUSTER_PORT, help="Port to listen on")
     parser.add_argument("--host", default=socket.gethostname(), help="Host to bind to")
-    parser.add_argument("--nodes", default=",".join(CLUSTER_NODES),
-                        help="Comma-separated list of cluster nodes")
+    parser.add_argument(
+        "--nodes", default=",".join(CLUSTER_NODES), help="Comma-separated list of cluster nodes"
+    )
     args = parser.parse_args()
 
     # Update environment variables
@@ -1956,6 +1233,7 @@ if __name__ == "__main__":
                 def __init__(self):
                     self.vectors = {}
                     self.get = self.vectors.get
+
             self.vector_store = MockVectorStore()
             self.block_chain_manager = BlockChainManager()
 
@@ -1977,3 +1255,4 @@ if __name__ == "__main__":
         logger.info("Stopping cluster node...")
     finally:
         node.stop()
+        logger.info("Cluster node stopped")

@@ -1,6 +1,88 @@
-# WDBX Documentation Portal
+# WDBX Documentation
 
-Welcome to the WDBX documentation portal. This site contains comprehensive documentation for the WDBX vector database and search engine.
+<!-- category: Getting Started -->
+<!-- priority: 10 -->
+<!-- tags: overview, introduction, documentation, getting started -->
+
+Welcome to the WDBX documentation! This guide will help you get started with WDBX, a powerful database extension system.
+
+## Overview
+
+WDBX (Workspace Database Extension) is a Python library that extends traditional database functionality with advanced features:
+
+- Vector operations and similarity search
+- Plugin system for custom extensions
+- Advanced caching and optimization
+- Cross-platform compatibility
+- Comprehensive monitoring and diagnostics
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install wdbx
+```
+
+### Basic Usage
+
+```python
+from wdbx import Database
+
+# Initialize database
+db = Database("mydb")
+
+# Create a collection
+users = db.create_collection("users")
+
+# Insert data
+users.insert({
+    "name": "John Doe",
+    "email": "john@example.com"
+})
+```
+
+## Documentation Structure
+
+1. **Getting Started**
+   - Installation
+   - Basic Configuration
+   - Quick Start Guide
+
+2. **Core Features**
+   - Database Operations
+   - Vector Operations
+   - Plugin System
+   - Caching System
+
+3. **Advanced Topics**
+   - Performance Optimization
+   - Security
+   - Monitoring
+   - Diagnostics
+
+4. **Development**
+   - Contributing Guidelines
+   - Plugin Development
+   - Testing Framework
+   - Code Quality
+
+5. **Reference**
+   - API Documentation
+   - Configuration Options
+   - Best Practices
+   - Examples
+
+## Support
+
+For support and questions:
+- GitHub Issues: [WDBX Issues](https://github.com/wdbx/issues)
+- Documentation: [Full Documentation](https://wdbx.readthedocs.io)
+- Community: [Discord Server](https://discord.gg/wdbx)
+
+## License
+
+WDBX is released under the MIT License. See the LICENSE file for details.
 
 ## Key Features
 

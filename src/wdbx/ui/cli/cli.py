@@ -7,6 +7,7 @@ This module provides command-line tools for interacting with WDBX.
 import argparse
 import importlib
 import logging
+import os
 import sys
 from typing import Any, Callable, Dict
 
@@ -18,11 +19,22 @@ from ...core import (
     SHARD_COUNT,
     VECTOR_DIMENSION,
     WDBX,
-    EmbeddingVector,
-    WDBXConfig,
-    create_wdbx,
     logger,
 )
+
+# Import the plugin loader
+try:
+    from .plugin_loader import (
+        PluginRegistry,
+        load_plugins,
+        plugin_command,
+        register_plugin_commands,
+    )
+
+    HAS_PLUGIN_SUPPORT = True
+except ImportError:
+    HAS_PLUGIN_SUPPORT = False
+    logger.warning("Plugin support not available")
 
 # Define a type alias for plugin commands for clarity
 PluginCommand = Callable[[WDBX, str], None]
@@ -67,7 +79,7 @@ CLI_THEMES = {
         "reset": "\033[0m",
         "error": "\033[1;31m",
         "success": "\033[1;32m",
-        "separator": "="
+        "separator": "=",
     },
     "dark": {
         "title": "\033[1;35m",
@@ -79,7 +91,7 @@ CLI_THEMES = {
         "reset": "\033[0m",
         "error": "\033[1;31m",
         "success": "\033[1;32m",
-        "separator": "-"
+        "separator": "-",
     },
     "light": {
         "title": "\033[1;34m",
@@ -91,8 +103,8 @@ CLI_THEMES = {
         "reset": "\033[0m",
         "error": "\033[1;31m",
         "success": "\033[1;32m",
-        "separator": "·"
-    }
+        "separator": "·",
+    },
 }
 
 PLUGINS: Dict[str, PluginCommand] = {}
@@ -104,42 +116,169 @@ def parse_args() -> Dict[str, Any]:
 
     # Core settings
     core_group = parser.add_argument_group("Core Settings")
-    core_group.add_argument("--dimension", type=int, default=VECTOR_DIMENSION,
-                            help=f"Vector dimension (default: {VECTOR_DIMENSION})")
-    core_group.add_argument("--shards", type=int, default=SHARD_COUNT,
-                            help=f"Number of shards (default: {SHARD_COUNT})")
-    core_group.add_argument("--data-dir", type=str, default=DEFAULT_DATA_DIR,
-                            help=f"Data directory (default: {DEFAULT_DATA_DIR})")
+    core_group.add_argument(
+        "--dimension",
+        type=int,
+        default=VECTOR_DIMENSION,
+        help=f"Vector dimension (default: {VECTOR_DIMENSION})",
+    )
+    core_group.add_argument(
+        "--shards", type=int, default=SHARD_COUNT, help=f"Number of shards (default: {SHARD_COUNT})"
+    )
+    core_group.add_argument(
+        "--data-dir",
+        type=str,
+        default=DEFAULT_DATA_DIR,
+        help=f"Data directory (default: {DEFAULT_DATA_DIR})",
+    )
+    core_group.add_argument(
+        "--memory-limit",
+        type=int,
+        default=0,
+        help="Memory limit in MB (0 = no limit)",
+    )
+    core_group.add_argument(
+        "--storage-format",
+        type=str,
+        choices=["json", "binary", "hybrid"],
+        default="json",
+        help="Storage format for vector data (default: json)",
+    )
 
     # Operating mode
     mode_group = parser.add_argument_group("Operation Mode")
-    mode_group.add_argument("--server", action="store_true",
-                            help="Start HTTP server")
-    mode_group.add_argument("--host", type=str, default="127.0.0.1",
-                            help="HTTP server host (default: 127.0.0.1)")
-    mode_group.add_argument("--port", type=int, default=5000,
-                            help="HTTP server port (default: 5000)")
-    mode_group.add_argument("--interactive", action="store_true",
-                            help="Start interactive mode")
+    mode_group.add_argument("--server", action="store_true", help="Start HTTP server")
+    mode_group.add_argument(
+        "--host", type=str, default="127.0.0.1", help="HTTP server host (default: 127.0.0.1)"
+    )
+    mode_group.add_argument(
+        "--port", type=int, default=5000, help="HTTP server port (default: 5000)"
+    )
+    mode_group.add_argument("--interactive", action="store_true", help="Start interactive mode")
+    mode_group.add_argument(
+        "--terminal-ui", action="store_true", help="Start the rich terminal UI dashboard"
+    )
+    mode_group.add_argument(
+        "--simple-dashboard", action="store_true", help="Start simple monitoring dashboard"
+    )
+    mode_group.add_argument("--benchmark", action="store_true", help="Run benchmark tests")
+    mode_group.add_argument(
+        "--import", dest="import_file", type=str, help="Import vectors from a file"
+    )
+    mode_group.add_argument(
+        "--export", dest="export_file", type=str, help="Export vectors to a file"
+    )
+    mode_group.add_argument("--query", type=str, help="Run a query and exit")
 
     # Logging and configuration
     config_group = parser.add_argument_group("Configuration")
-    config_group.add_argument("--log-level", type=str,
-                              choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-                              default="INFO", help="Set logging level")
+    config_group.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Set logging level",
+    )
     config_group.add_argument("--config", type=str, help="Path to configuration file")
+    config_group.add_argument(
+        "--theme",
+        type=str,
+        default="default",
+        choices=["default", "dark", "light", "green", "blue", "minimal", "terminal"],
+        help="UI theme (default: default)",
+    )
+    config_group.add_argument("--debug", action="store_true", help="Enable debug mode")
+    config_group.add_argument("--log-file", type=str, help="Path to log file")
+    config_group.add_argument("--profile", action="store_true", help="Enable performance profiling")
 
     # Feature flags
     feature_group = parser.add_argument_group("Features")
-    feature_group.add_argument("--enable-caching", action="store_true",
-                               help="Enable caching")
-    feature_group.add_argument("--cache-size", type=int, default=100,
-                               help="Number of items to cache (default: 100)")
-    feature_group.add_argument("--enable-persona", action="store_true",
-                               help="Enable persona management")
-    feature_group.add_argument("--content-filter", type=str,
-                               choices=["none", "low", "medium", "high"],
-                               default="medium", help="Content filter level")
+    feature_group.add_argument("--enable-caching", action="store_true", help="Enable caching")
+    feature_group.add_argument(
+        "--cache-size", type=int, default=100, help="Number of items to cache (default: 100)"
+    )
+    feature_group.add_argument(
+        "--enable-persona", action="store_true", help="Enable persona management"
+    )
+    feature_group.add_argument(
+        "--content-filter",
+        type=str,
+        choices=["none", "low", "medium", "high"],
+        default="medium",
+        help="Content filter level",
+    )
+    feature_group.add_argument(
+        "--enable-compression", action="store_true", help="Enable data compression"
+    )
+    feature_group.add_argument(
+        "--enable-encryption", action="store_true", help="Enable data encryption"
+    )
+    feature_group.add_argument(
+        "--auto-backup", action="store_true", help="Enable automatic backups"
+    )
+    feature_group.add_argument(
+        "--backup-interval", type=int, default=60, help="Backup interval in minutes (default: 60)"
+    )
+
+    # UI customization
+    ui_group = parser.add_argument_group("UI Customization")
+    ui_group.add_argument("--no-color", action="store_true", help="Disable colored output")
+    ui_group.add_argument("--compact", action="store_true", help="Use compact display mode")
+    ui_group.add_argument("--wide", action="store_true", help="Use wide display mode")
+    ui_group.add_argument(
+        "--refresh-rate", type=float, default=1.0, help="UI refresh rate in seconds (default: 1.0)"
+    )
+    ui_group.add_argument(
+        "--show-memory-usage", action="store_true", help="Show memory usage in UI"
+    )
+    ui_group.add_argument("--show-cpu-usage", action="store_true", help="Show CPU usage in UI")
+    ui_group.add_argument("--custom-logo", type=str, help="Path to custom logo file")
+
+    # Plugins
+    plugin_group = parser.add_argument_group("Plugins")
+    plugin_group.add_argument(
+        "--plugins", type=str, default="", help="Comma-separated list of plugins to load"
+    )
+    plugin_group.add_argument("--plugin-dir", type=str, help="Directory containing plugins")
+    plugin_group.add_argument(
+        "--list-plugins", action="store_true", help="List available plugins and exit"
+    )
+    plugin_group.add_argument("--plugin-config", type=str, help="Path to plugin configuration file")
+
+    # API options
+    api_group = parser.add_argument_group("API Options")
+    api_group.add_argument("--api-key", type=str, help="API key for authentication")
+    api_group.add_argument("--enable-cors", action="store_true", help="Enable CORS for API")
+    api_group.add_argument(
+        "--api-rate-limit", type=int, default=60, help="API rate limit per minute (default: 60)"
+    )
+    api_group.add_argument(
+        "--api-timeout", type=int, default=30, help="API timeout in seconds (default: 30)"
+    )
+    api_group.add_argument("--api-docs", action="store_true", help="Generate API documentation")
+
+    # Vector search options
+    vector_group = parser.add_argument_group("Vector Search")
+    vector_group.add_argument(
+        "--distance-metric",
+        type=str,
+        choices=["cosine", "euclidean", "dot"],
+        default="cosine",
+        help="Distance metric for vector similarity (default: cosine)",
+    )
+    vector_group.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.75,
+        help="Threshold for vector similarity (default: 0.75)",
+    )
+    vector_group.add_argument(
+        "--index-type",
+        type=str,
+        choices=["flat", "hnsw", "ivf"],
+        default="flat",
+        help="Vector index type (default: flat)",
+    )
 
     args = parser.parse_args()
     return vars(args)
@@ -201,135 +340,114 @@ def handle_plugin_command(db, cmd_name: str, args: str, plugins: Dict[str, Calla
     return False
 
 
-def run_interactive_mode(db: WDBX, theme: str = "default", plugins: Dict = None) -> None:
+def run_interactive_mode(db: WDBX, config: Dict[str, Any]) -> None:
     """
-    Run interactive mode
+    Run an interactive command-line interface for WDBX.
 
     Args:
         db: WDBX instance
-        theme: UI theme to use
-        plugins: Dictionary of plugin commands
+        config: Configuration dictionary
     """
-    print(f"WDBX Interactive Mode ({theme} theme)")
-    print("----------------------------")
-    print(
-        f"Using WDBX with {db.vector_dimension}-dimensional vectors across {db.num_shards} shards")
-    print("\nAvailable commands:")
-    print("  create <text> - Create an embedding and store it")
-    print("  search <text> - Search for similar embeddings")
-    print("  info - Show system information")
-    print("  help - Show this help message")
-    print("  exit - Exit interactive mode")
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+        from prompt_toolkit.completion import WordCompleter
+        from prompt_toolkit.history import FileHistory
 
-    # Add plugin commands to help if available
-    if plugins:
-        print("\nPlugin commands:")
-        for cmd_name in sorted(plugins.keys()):
-            cmd_func = plugins[cmd_name]
-            doc = cmd_func.__doc__ or "No documentation available"
-            print(f"  {cmd_name} - {doc.strip().split('.')[0]}")
+        has_prompt_toolkit = True
+    except ImportError:
+        logger.warning("prompt-toolkit not installed, using basic input")
+        has_prompt_toolkit = False
 
-    # Simple embedding function
-    def embed_text(text: str) -> np.ndarray:
-        # This is a very simple embedding function
-        if not text:
-            return np.random.rand(db.vector_dimension).astype(np.float32)
-        # Create a deterministic vector based on the text
-        seed = sum(ord(c) for c in text)
-        np.random.seed(seed)
-        return np.random.rand(db.vector_dimension).astype(np.float32)
+    # Ensure history directory exists
+    history_dir = os.path.expanduser("~/.wdbx")
+    os.makedirs(history_dir, exist_ok=True)
+    history_file = os.path.join(history_dir, "cli_history")
 
-    while True:
-        try:
-            cmd = input("\nwdbx> ").strip()
-            if not cmd:
+    # Set up commands (basic ones + terminal UI commands)
+    commands = get_basic_commands()
+
+    # Load plugins if enabled
+    plugin_registry = None
+    if HAS_PLUGIN_SUPPORT and config.get("enable_plugins", False):
+        logger.info("Loading plugins...")
+        plugin_dirs = config.get("plugin_dirs", None)
+        plugin_registry = load_plugins(plugin_dirs)
+        register_plugin_commands(commands, plugin_registry)
+
+        # Add plugin management command
+        if plugin_registry and len(plugin_registry.loaded_plugins) > 0:
+            commands["plugin"] = plugin_command(plugin_registry)
+            logger.info(
+                f"Loaded {len(plugin_registry.loaded_plugins)} plugins with "
+                f"{sum(p.get('commands_registered', 0) for p in plugin_registry.loaded_plugins)} commands"
+            )
+
+    # Print welcome message
+    show_welcome(config)
+
+    # Start interactive loop
+    if has_prompt_toolkit:
+        # Set up prompt with history and auto-completion
+        command_completer = WordCompleter(list(commands.keys()), ignore_case=True)
+        session = PromptSession(
+            history=FileHistory(history_file),
+            auto_suggest=AutoSuggestFromHistory(),
+            completer=command_completer,
+        )
+
+        while True:
+            try:
+                # Get command with prompt-toolkit features
+                cmd_input = session.prompt(get_prompt(config), complete_while_typing=True).strip()
+
+                # Skip empty inputs
+                if not cmd_input:
+                    continue
+
+                # Process the command
+                if not process_command(cmd_input, commands, db, config):
+                    break
+
+            except KeyboardInterrupt:
+                print("^C")
                 continue
-
-            parts = cmd.split(maxsplit=1)
-            command = parts[0].lower()
-            args = parts[1] if len(parts) > 1 else ""
-
-            if command == "exit":
-                print("Exiting interactive mode.")
+            except EOFError:
+                print("^D")
                 break
+            except Exception as e:
+                logger.error(f"Error in interactive mode: {e}")
+                if config.get("debug", False):
+                    import traceback
 
-            if command == "help":
-                # Re-display help
-                print("Available commands:")
-                print("  create <text> - Create an embedding and store it")
-                print("  search <text> - Search for similar embeddings")
-                print("  info - Show system information")
-                print("  help - Show this help message")
-                print("  exit - Exit interactive mode")
-                if plugins:
-                    print("\nPlugin commands:")
-                    for cmd_name in sorted(plugins.keys()):
-                        cmd_func = plugins[cmd_name]
-                        doc = cmd_func.__doc__ or "No documentation available"
-                        print(f"  {cmd_name} - {doc.strip().split('.')[0]}")
+                    traceback.print_exc()
+    else:
+        # Basic input loop without prompt-toolkit features
+        while True:
+            try:
+                # Get command with basic input
+                cmd_input = input(get_prompt(config)).strip()
 
-            elif command == "create":
-                if not args:
-                    print("Error: Text required for embedding creation")
+                # Skip empty inputs
+                if not cmd_input:
                     continue
 
-                # Create and store embedding
-                vector = embed_text(args)
-                embedding = EmbeddingVector(
-                    vector=vector,
-                    metadata={"text": args, "source": "interactive"}
-                )
-                vector_id = db.store_embedding(embedding)
-                print(f"Created and stored embedding with ID: {vector_id}")
+                # Process the command
+                if not process_command(cmd_input, commands, db, config):
+                    break
 
-            elif command == "search":
-                if not args:
-                    print("Error: Text required for search")
-                    continue
+            except KeyboardInterrupt:
+                print("^C")
+                continue
+            except EOFError:
+                print("^D")
+                break
+            except Exception as e:
+                logger.error(f"Error in interactive mode: {e}")
+                if config.get("debug", False):
+                    import traceback
 
-                # Search for similar vectors
-                query_vector = embed_text(args)
-                results = db.search_similar_vectors(query_vector, top_k=5)
-
-                print(f"Search results for '{args}':")
-                if not results:
-                    print("  No results found")
-                else:
-                    for i, (vector_id, similarity) in enumerate(results):
-                        print(
-                            f"  Result {
-                                i +
-                                1}: Vector ID {vector_id}, Similarity: {
-                                similarity:.4f}")
-
-            elif command == "info":
-                # Show system info
-                stats = db.get_system_stats()
-                print("System Information:")
-                print(f"  Vector dimension: {db.vector_dimension}")
-                print(f"  Number of shards: {db.num_shards}")
-                print(f"  Data directory: {db.data_dir}")
-                print(f"  Vectors stored: {stats['vectors']['stored']}")
-                print(f"  Blocks created: {stats['blocks']['created']}")
-                print(f"  Uptime: {stats['uptime_formatted']}")
-                print(f"  Memory usage: {stats['memory_usage_mb']:.2f} MB")
-
-            elif plugins and command in plugins:
-                # Execute plugin command
-                try:
-                    plugins[command](db, args)
-                except Exception as e:
-                    print(f"Error executing plugin command '{command}': {e}")
-
-            else:
-                print(f"Unknown command: {command}")
-                print("Type 'help' for a list of available commands")
-
-        except KeyboardInterrupt:
-            print("\nExiting interactive mode.")
-            break
-        except Exception as e:
-            print(f"Error: {e}")
+                    traceback.print_exc()
 
 
 def run_server(db: WDBX, host: str, port: int) -> None:
@@ -347,6 +465,7 @@ def run_server(db: WDBX, host: str, port: int) -> None:
         import builtins
 
         from .entry_points import web_main
+
         builtins._WDBX_INSTANCE = db
 
         logger.info(f"Starting Streamlit UI server on {host}:{port}")
@@ -363,64 +482,133 @@ def run_server(db: WDBX, host: str, port: int) -> None:
 
 
 def main() -> None:
-    """Main entry point for the CLI"""
-    # Parse command-line arguments
-    args = parse_args()
+    """
+    CLI entry point.
+    """
+    parser = argparse.ArgumentParser(description="WDBX Command Line Interface")
+
+    # Add basic arguments
+    parser.add_argument("--data-dir", help="Directory to store vector data")
+    parser.add_argument(
+        "--dimension",
+        type=int,
+        default=DEFAULT_DIMENSION,
+        help=f"Vector dimension (default: {DEFAULT_DIMENSION})",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=DEFAULT_NUM_SHARDS,
+        help=f"Number of shards (default: {DEFAULT_NUM_SHARDS})",
+    )
+    parser.add_argument(
+        "--memory-only", action="store_true", help="Run in memory-only mode (no persistence)"
+    )
+    parser.add_argument(
+        "--cache-ttl",
+        type=int,
+        default=DEFAULT_CACHE_TTL,
+        help=f"Cache time-to-live in seconds (default: {DEFAULT_CACHE_TTL})",
+    )
+
+    # Command arguments
+    parser.add_argument("--exec", help="Execute a command and exit")
+    parser.add_argument("--monitor", action="store_true", help="Run the terminal UI monitor")
+    parser.add_argument("--dashboard", action="store_true", help="Run the terminal dashboard")
+    parser.add_argument(
+        "--compact", action="store_true", help="Use compact display mode with --dashboard"
+    )
+
+    # UI customization
+    parser.add_argument("--theme", default="default", help="UI theme (default, dark, light, ocean)")
+    parser.add_argument("--no-colors", action="store_true", help="Disable colored output")
+    parser.add_argument("--no-unicode", action="store_true", help="Disable unicode characters")
+
+    # Web UI
+    parser.add_argument("--web", action="store_true", help="Launch the web UI")
+    parser.add_argument("--port", type=int, default=8501, help="Port for web UI (default: 8501)")
+
+    # Plugin support
+    parser.add_argument("--enable-plugins", action="store_true", help="Enable plugin support")
+    parser.add_argument("--plugin-dirs", help="Comma-separated list of plugin directories")
+
+    # Debug and logging
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # Parse arguments
+    args = parser.parse_args()
 
     # Configure logging
-    logging_level = getattr(logging, args.get("log_level", "INFO"))
-    logging.getLogger().setLevel(logging_level)
+    if args.debug:
+        set_log_level(logging.DEBUG)
+    elif args.quiet:
+        set_log_level(logging.WARNING)
+    else:
+        set_log_level(logging.INFO)
 
-    # Create configuration
-    config = WDBXConfig(
-        vector_dimension=args.get("dimension", VECTOR_DIMENSION),
-        num_shards=args.get("shards", SHARD_COUNT),
-        data_dir=args.get("data_dir", DEFAULT_DATA_DIR),
-        enable_caching=args.get("enable_caching", False),
-        cache_size=args.get("cache_size", 100),
-        content_filter_level=args.get("content_filter", "medium")
-    )
+    # Create config from arguments
+    config = {
+        "data_dir": args.data_dir,
+        "dimension": args.dimension,
+        "num_shards": args.num_shards,
+        "memory_only": args.memory_only,
+        "cache_ttl": args.cache_ttl,
+        "theme": args.theme,
+        "use_colors": not args.no_colors,
+        "use_unicode": not args.no_unicode,
+        "debug": args.debug,
+        "quiet": args.quiet,
+        "port": args.port,
+        "enable_plugins": args.enable_plugins,
+    }
 
-    # Create WDBX instance
-    logger.info(
-        f"Creating WDBX instance with {config.vector_dimension}-d vectors, {config.num_shards} shards")
-    db = create_wdbx(
-        vector_dimension=config.vector_dimension,
-        num_shards=config.num_shards,
-        data_dir=config.data_dir,
-        enable_caching=config.enable_caching,
-        cache_size=config.cache_size,
-        content_filter_level=config.content_filter_level
-    )
+    # Handle plugin directories
+    if args.plugin_dirs:
+        config["plugin_dirs"] = args.plugin_dirs.split(",")
 
+    # Initialize WDBX
     try:
-        # Determine operating mode
-        if args.get("server", False):
-            # Start HTTP server
-            run_server(
-                db=db,
-                host=args.get("host", "127.0.0.1"),
-                port=args.get("port", 5000)
-            )
-        elif args.get("interactive", False):
-            # Start interactive mode
-            run_interactive_mode(
-                db=db,
-                theme=args.get("theme", "default")
-            )
-        else:
-            # No mode specified, default to interactive
-            logger.info("No operation mode specified, starting interactive mode")
-            run_interactive_mode(db)
-
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
+        db = initialize_wdbx(config)
+        logger.debug("WDBX initialized successfully")
     except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
-    finally:
-        # Clean up
-        logger.info("Shutting down WDBX")
-        db.close()
+        logger.error(f"Failed to initialize WDBX: {e}")
+        if args.debug:
+            import traceback
+
+            traceback.print_exc()
+        return 1
+
+    # Run the appropriate mode
+    if args.web:
+        # Launch web UI
+        try:
+            from ..streamlit_app import run_streamlit_app
+
+            run_streamlit_app(db, port=args.port)
+        except ImportError as e:
+            logger.error(f"Failed to launch web UI: {e}")
+            logger.error("Make sure streamlit is installed (pip install streamlit)")
+            return 1
+    elif args.monitor:
+        # Run terminal UI monitor
+        from .terminal_ui import run_terminal_ui
+
+        run_terminal_ui(db, config)
+    elif args.dashboard:
+        # Run dashboard
+        from .terminal_ui import run_simple_dashboard
+
+        run_simple_dashboard(db, config, compact=args.compact)
+    elif args.exec:
+        # Execute a command and exit
+        commands = get_basic_commands()
+        process_command(args.exec, commands, db, config)
+    else:
+        # Run interactive mode
+        run_interactive_mode(db, config)
+
+    return 0
 
 
 if __name__ == "__main__":

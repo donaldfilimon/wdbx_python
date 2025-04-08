@@ -70,28 +70,18 @@ tokenizer_cache = {}
 
 def register_commands(plugin_registry: Dict[str, Callable]) -> None:
     """
-    Register HuggingFace commands with the CLI.
+    Register HuggingFace plugin commands with the WDBX CLI.
 
     Args:
         plugin_registry: Registry to add commands to
     """
-    if not HAVE_TORCH or not HAVE_TRANSFORMERS:
-        logger.warning("HuggingFace integration disabled due to missing dependencies.")
-        plugin_registry["huggingface"] = cmd_huggingface_missing
-        return
-
-    # Register commands
-    plugin_registry["hf:embed"] = cmd_huggingface_embed
-    plugin_registry["hf:models"] = cmd_huggingface_models
     plugin_registry["hf:search"] = cmd_huggingface_search
+    plugin_registry["hf:model"] = cmd_huggingface_models
+    plugin_registry["hf:download"] = cmd_huggingface_batch
     plugin_registry["hf:config"] = cmd_huggingface_config
-    plugin_registry["hf:login"] = cmd_huggingface_login
-    plugin_registry["hf:batch"] = cmd_huggingface_batch
-    plugin_registry["huggingface"] = cmd_huggingface_help
+    plugin_registry["hf"] = cmd_huggingface_help
 
-    logger.info(
-        "HuggingFace commands registered: hf:embed, hf:models, hf:search, hf:config, hf:login, hf:batch"
-    )
+    logger.info("HuggingFace commands registered: hf:search, hf:model, hf:download, " "hf:config")
 
     # Load config if exists
     _load_huggingface_config()

@@ -21,6 +21,14 @@ from wdbx.data_structures import EmbeddingVector
 
 logger = logging.getLogger("WDBX.plugins.ollama")
 
+# Constants for magic numbers
+HTTP_STATUS_OK = 200
+HTTP_STATUS_BAD_REQUEST = 400
+HTTP_STATUS_NOT_FOUND = 404
+HTTP_STATUS_REQUEST_TIMEOUT = 408
+HTTP_STATUS_INTERNAL_SERVER_ERROR = 500
+HTTP_STATUS_GATEWAY_TIMEOUT = 504
+
 # Default settings
 DEFAULT_CONFIG = {
     "api_base": "http://localhost:11434",
@@ -265,13 +273,19 @@ def _handle_error_response(
     logger.error(error_msg)
 
     # Specific suggestions for common errors
-    if response.status_code == 404 and endpoint == "/api/embeddings":
+    if response.status_code == HTTP_STATUS_NOT_FOUND and endpoint == "/api/embeddings":
         logger.error(f"Model '{payload.get('model')}' not found. Use ollama:models.")
-    elif response.status_code == 500:
+    elif response.status_code == HTTP_STATUS_INTERNAL_SERVER_ERROR:
         logger.error("Ollama server error. Check Ollama service status.")
-    elif response.status_code in (408, 504):
+    elif response.status_code in (
+        HTTP_STATUS_REQUEST_TIMEOUT,
+        HTTP_STATUS_GATEWAY_TIMEOUT,
+    ):
         logger.error("Ollama request timed out. Increase timeout or check server load.")
-    elif response.status_code == 400 and "parameter not supported" in error_msg:
+    elif (
+        response.status_code == HTTP_STATUS_BAD_REQUEST
+        and "parameter not supported" in error_msg
+    ):
         logger.error(
             f"Model '{payload.get('model')}' might not support the requested operation or options."
         )
@@ -301,7 +315,7 @@ def _call_ollama_api(
         return None
 
     # Handle HTTP errors
-    if response.status_code != 200:
+    if response.status_code != HTTP_STATUS_OK:
         _handle_error_response(response, endpoint, payload)
         return None
 

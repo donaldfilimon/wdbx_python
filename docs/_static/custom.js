@@ -1,5 +1,6 @@
 /**
  * WDBX Documentation - Custom JavaScript
+ * Enhances the documentation with interactive features
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -14,6 +15,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Add table of contents highlighting based on scroll position
   setupTOCHighlighting();
+  
+  // Setup theme toggle functionality
+  setupThemeToggle();
   
   console.log('WDBX documentation custom JS initialized');
 });
@@ -40,7 +44,7 @@ function addCopyButtons() {
       // Add click event
       button.addEventListener('click', function() {
         const code = codeBlock.querySelector('code') || codeBlock;
-        const textToCopy = code.textContent;
+        const textToCopy = code.textContent.trim();
         
         // Copy to clipboard
         navigator.clipboard.writeText(textToCopy).then(function() {
@@ -83,6 +87,15 @@ function addHeadingAnchors() {
       anchor.title = 'Link to this heading';
       
       heading.appendChild(anchor);
+      
+      // Add hover effect to make anchors more visible
+      heading.addEventListener('mouseenter', function() {
+        anchor.style.opacity = '1';
+      });
+      
+      heading.addEventListener('mouseleave', function() {
+        anchor.style.opacity = '';
+      });
     }
   });
 }
@@ -126,8 +139,21 @@ function setupTOCHighlighting() {
     }
   });
   
+  // Debounce function to limit scroll event firing
+  function debounce(func, wait) {
+    let timeout;
+    return function() {
+      const context = this;
+      const args = arguments;
+      clearTimeout(timeout);
+      timeout = setTimeout(function() {
+        func.apply(context, args);
+      }, wait);
+    };
+  }
+  
   // Update active section on scroll
-  function updateActiveTOC() {
+  const updateActiveTOC = debounce(function() {
     // Get current scroll position
     const scrollPosition = window.scrollY;
     
@@ -149,12 +175,49 @@ function setupTOCHighlighting() {
       });
       
       currentSection.link.classList.add('active');
+      
+      // Ensure the active link is visible in the TOC
+      currentSection.link.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
     }
-  }
+  }, 100);
   
   // Add scroll event listener
   window.addEventListener('scroll', updateActiveTOC);
   
   // Initial update
   updateActiveTOC();
-} 
+}
+
+/**
+ * Sets up theme toggle functionality
+ */
+function setupThemeToggle() {
+  const themeToggle = document.getElementById('theme-toggle');
+  
+  if (!themeToggle) return;
+  
+  themeToggle.addEventListener('click', function() {
+    const body = document.body;
+    const currentTheme = body.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    body.setAttribute('data-theme', newTheme);
+    localStorage.setItem('wdbx-theme', newTheme);
+    
+    // Update icon if needed
+    const themeIcon = themeToggle.querySelector('i');
+    if (themeIcon) {
+      if (newTheme === 'dark') {
+        themeIcon.classList.remove('fa-moon');
+        themeIcon.classList.add('fa-sun');
+      } else {
+        themeIcon.classList.remove('fa-sun');
+        themeIcon.classList.add('fa-moon');
+      }
+    }
+  });
+}

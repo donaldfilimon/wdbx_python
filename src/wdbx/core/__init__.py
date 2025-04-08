@@ -16,6 +16,14 @@ from ..storage.shard_manager import ShardManager
 # Re-export components from their new locations
 from ..storage.vector_store import VectorStore
 from .config import WDBXConfig
+from .constants import (
+    DEFAULT_BIAS_SCORE,
+    DEFAULT_DATA_DIR,
+    DEFAULT_SIMILARITY_THRESHOLD,
+    SHARD_COUNT,
+    VECTOR_DIMENSION,
+    logger,
+)
 from .data_structures import Block, EmbeddingVector
 from .wdbx import WDBX, DistributedQueryPlanner, create_wdbx
 
@@ -24,21 +32,18 @@ __all__ = [
     "WDBX",
     "DistributedQueryPlanner",
     "create_wdbx",
-
     # Configuration
     "WDBXConfig",
-
     # Data structures
     "EmbeddingVector",
     "Block",
-
     # Constants
     "VECTOR_DIMENSION",
     "SHARD_COUNT",
     "DEFAULT_SIMILARITY_THRESHOLD",
     "DEFAULT_DATA_DIR",
+    "DEFAULT_BIAS_SCORE",
     "logger",
-
     # New components
     "VectorStore",
     "ShardManager",

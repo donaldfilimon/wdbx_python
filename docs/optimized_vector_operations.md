@@ -1,262 +1,324 @@
-# Optimized Vector Operations in WDBX
+# Optimized Vector Operations
 
-This document provides an overview of the optimized vector operations implemented in the WDBX codebase, focusing on the `OptimizedVectorStore` class and related components.
+<!-- category: Development -->
+<!-- priority: 60 -->
+<!-- tags: vectors, optimization, performance, algorithms -->
+
+This guide covers optimized vector operations in WDBX, including similarity search, batch processing, and memory management.
 
 ## Overview
 
-The `OptimizedVectorStore` class provides a high-performance implementation for storing, retrieving, and searching vector embeddings. It includes features such as:
+WDBX provides highly optimized vector operations for efficient similarity search and vector processing:
 
-- Fast similarity search using HNSW (Hierarchical Navigable Small World) indices when available
-- Efficient batch processing for vector operations
-- Memory optimization techniques
-- Thread-safe operations
-- Comprehensive error handling
+- Fast similarity search using optimized algorithms
+- Efficient batch processing for large datasets
+- Memory-efficient vector storage and retrieval
+- GPU acceleration support
+- Automatic index optimization
 
-## Key Components
+## Vector Operations
 
-### OptimizedVectorStore
-
-The primary class for vector storage and retrieval operations.
+### Similarity Search
 
 ```python
-class OptimizedVectorStore:
-    def __init__(
-        self,
-        dimensions: int = VECTOR_DIMENSION,
-        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
-    ):
-        """
-        Initialize the optimized vector store.
-        
-        Args:
-            dimensions: Dimension of vectors to store
-            similarity_threshold: Minimum similarity threshold for queries
-        """
-```
+from wdbx.vectors import VectorIndex
 
-#### Main Methods
-
-| Method | Description |
-|--------|-------------|
-| `add(vector_id, vector)` | Add a single vector to the store |
-| `add_batch(vectors)` | Add multiple vectors in a batch operation |
-| `search_similar(query_vector, top_k)` | Find vectors similar to the query vector |
-| `delete(vector_id)` | Remove a vector from the store |
-| `optimize_memory()` | Clean up resources and optimize memory usage |
-
-### OptimizedBlockManager
-
-Manages blocks of data with associated vector embeddings, providing efficient storage and retrieval.
-
-```python
-class OptimizedBlockManager:
-    def __init__(self, lmdb_path: Optional[str] = None):
-        """
-        Initialize a new OptimizedBlockManager.
-
-        Args:
-            lmdb_path: Optional path to LMDB database for persistence
-        """
-```
-
-#### Main Methods
-
-| Method | Description |
-|--------|-------------|
-| `create_block_batch(block_data_batch)` | Create multiple blocks efficiently |
-| `get_block(block_id)` | Get a block by its ID |
-| `get_blocks_batch(block_ids)` | Get multiple blocks in a batch operation |
-| `validate_chain(chain_id)` | Validate the integrity of a block chain |
-
-### OptimizedTransactionManager
-
-Provides ACID-compliant transactions for data operations.
-
-```python
-class OptimizedTransactionManager:
-    def __init__(self):
-        """Initialize a new OptimizedTransactionManager."""
-```
-
-#### Main Methods
-
-| Method | Description |
-|--------|-------------|
-| `start_transaction()` | Start a new transaction |
-| `read(transaction_id, key)` | Read a value using the specified transaction |
-| `write(transaction_id, key, value)` | Write a value using the specified transaction |
-| `commit(transaction_id)` | Commit a transaction |
-| `abort(transaction_id)` | Abort a transaction |
-
-## Performance Optimization Techniques
-
-### 1. HNSW Index for Fast Similarity Search
-
-When the `hnswlib` package is available, the system uses a Hierarchical Navigable Small World (HNSW) index for efficient similarity searches. This provides logarithmic-time complexity instead of linear search:
-
-```python
-def search_similar(self, query_vector: np.ndarray, top_k: int = 5) -> List[Tuple[str, float]]:
-    # ... (guard clauses)
-    
-    with self._lock:
-        # Try to use HNSW index if available
-        if self.index is not None and self._has_hnswlib:
-            try:
-                k = min(top_k, len(self.vectors))
-                labels, distances = self.index.knn_query(query_vector, k=k)
-                # ... (process results)
-                return sorted(results, key=lambda x: x[1], reverse=True)
-            except Exception as e:
-                logging.error(f"Error in HNSW search: {e}. Falling back to brute force.")
-        
-        # Fallback to optimized brute force approach
-        # ...
-```
-
-### 2. Batch Processing
-
-Vector operations are optimized for batch processing to reduce overhead:
-
-```python
-def add_batch(self, vectors: Dict[str, np.ndarray]) -> List[str]:
-    """
-    Add multiple vectors to the store.
-
-    Args:
-        vectors: Dictionary of vector_id -> vector
-
-    Returns:
-        List of added vector IDs
-    """
-    with self._lock:
-        for vec_id, vector in vectors.items():
-            self.vectors[vec_id] = vector
-
-        self._rebuild_index()
-    return list(vectors.keys())
-```
-
-### 3. Memory Management
-
-The system includes memory optimization features to handle large vector datasets:
-
-```python
-def optimize_memory(self) -> bool:
-    """
-    Optimize memory usage by cleaning up resources when necessary.
-    """
-    # ... Implementation includes:
-    # - Memory usage tracking
-    # - Conditional index rebuilding
-    # - Garbage collection
-    # - Logging of memory changes
-```
-
-### 4. Thread Safety
-
-All operations are thread-safe using reentrant locks:
-
-```python
-def __init__(self, dimensions: int = VECTOR_DIMENSION, similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD):
-    # ...
-    self._lock = threading.RLock()
-    # ...
-```
-
-## Error Handling
-
-The system implements comprehensive error handling with:
-
-1. **Guard Clauses**: Input validation before processing
-2. **Exception Handling**: Try-except blocks with specific error types
-3. **Logging**: Detailed error logs for diagnostics
-4. **Fallback Mechanisms**: Alternative implementations when primary methods fail
-
-Example:
-
-```python
-def add(self, vector_id: str, vector: np.ndarray) -> bool:
-    # Type checks
-    if not isinstance(vector_id, str):
-        raise TypeError("vector_id must be a string")
-    
-    if not isinstance(vector, np.ndarray):
-        raise TypeError("vector must be a numpy array")
-    
-    # Dimension check
-    if self.dimensions and vector.shape[0] != self.dimensions:
-        raise ValueError(
-            f"Vector dimensions {vector.shape[0]} do not match "
-            f"expected dimensions {self.dimensions}"
-        )
-        
-    with self._lock:
-        try:
-            # ... Implementation ...
-        except Exception as e:
-            logging.error(f"Error adding vector {vector_id}: {e}")
-            return False
-```
-
-## Usage Examples
-
-### Basic Vector Operations
-
-```python
-# Initialize the vector store
-vector_store = OptimizedVectorStore(dimensions=1536)
+# Create vector index
+index = VectorIndex(dimension=768)
 
 # Add vectors
-vector_id = "doc1"
-vector = np.random.random(1536)  # Your embedding vector
-vector_store.add(vector_id, vector)
+index.add(
+    ids=["doc1", "doc2", "doc3"],
+    vectors=embeddings,  # numpy array of shape (3, 768)
+)
 
-# Search for similar vectors
-query_vector = np.random.random(1536)  # Your query embedding
-results = vector_store.search_similar(query_vector, top_k=5)
-for vec_id, similarity in results:
-    print(f"Vector {vec_id}: Similarity {similarity:.4f}")
+# Search similar vectors
+results = index.search(
+    query_vector,  # numpy array of shape (768,)
+    k=5,  # number of results
+)
 ```
 
-### Using Transactions
+### Batch Processing
 
 ```python
-# Initialize transaction manager
-tx_manager = OptimizedTransactionManager()
+from wdbx.vectors import batch_process
 
-# Start a transaction
-transaction = tx_manager.start_transaction()
-transaction_id = transaction.id
+# Process vectors in batches
+results = batch_process(
+    vectors,
+    batch_size=32,
+    process_fn=lambda x: model(x),
+)
+```
 
-# Perform operations
-tx_manager.write(transaction_id, "key1", "value1")
-result = tx_manager.read(transaction_id, "key1")
-print(f"Read result: {result}")
+## Optimization Techniques
 
-# Commit the transaction
-tx_manager.commit(transaction_id)
+### Memory Management
+
+```python
+from wdbx.vectors import MemoryOptimizedIndex
+
+# Create memory-optimized index
+index = MemoryOptimizedIndex(
+    dimension=768,
+    max_elements=1000000,
+)
+
+# Configure memory usage
+index.set_memory_limit(
+    max_memory_gb=4,
+    auto_gc=True,
+)
+```
+
+### GPU Acceleration
+
+```python
+from wdbx.vectors import GPUIndex
+
+# Create GPU-accelerated index
+index = GPUIndex(
+    dimension=768,
+    device="cuda:0",
+)
+
+# Batch search on GPU
+results = index.batch_search(
+    query_vectors,  # shape (N, 768)
+    k=5,
+)
+```
+
+## Index Types
+
+### HNSW Index
+
+```python
+from wdbx.vectors import HNSWIndex
+
+# Create HNSW index
+index = HNSWIndex(
+    dimension=768,
+    m=16,  # number of connections
+    ef_construction=200,
+)
+
+# Build index
+index.build(vectors)
+```
+
+### IVF Index
+
+```python
+from wdbx.vectors import IVFIndex
+
+# Create IVF index
+index = IVFIndex(
+    dimension=768,
+    nlist=100,  # number of clusters
+)
+
+# Train index
+index.train(training_vectors)
 ```
 
 ## Performance Monitoring
 
-The system includes performance monitoring with timing operations:
+### Metrics Collection
 
 ```python
-@time_operation("OptimizedVectorStore", "add")
-def add(self, vector_id: str, vector: np.ndarray) -> bool:
-    # ...
+from wdbx.vectors import VectorMetrics
+
+# Initialize metrics
+metrics = VectorMetrics()
+
+# Track operation performance
+with metrics.track("similarity_search"):
+    results = index.search(query_vector)
+
+# Get performance stats
+stats = metrics.get_stats()
 ```
 
-This decorator logs execution time for performance analysis.
+### Memory Profiling
+
+```python
+from wdbx.vectors import memory_profile
+
+# Profile memory usage
+@memory_profile
+def process_vectors(vectors):
+    return index.batch_add(vectors)
+```
 
 ## Best Practices
 
-When working with the optimized vector operations:
+1. **Batch Processing**
+   - Use batch operations when possible
+   - Choose appropriate batch sizes
+   - Monitor memory usage
 
-1. **Use Batch Operations**: Prefer batch operations over individual operations for better performance
-2. **Context Managers**: Use the classes as context managers for automatic resource cleanup
-3. **Memory Monitoring**: For large datasets, periodically call `optimize_memory()` to manage memory usage
-4. **Error Handling**: Always check return values and handle potential exceptions
-5. **Transactions**: Use transactions for operations that need ACID guarantees
+2. **Index Configuration**
+   - Tune index parameters for your use case
+   - Balance speed vs accuracy
+   - Consider memory constraints
 
-By following these guidelines, you'll be able to leverage the full power of WDBX's optimized vector operations. 
+3. **Memory Management**
+   - Use memory-optimized indices for large datasets
+   - Enable automatic garbage collection
+   - Monitor memory usage
+
+4. **GPU Usage**
+   - Use GPU acceleration when available
+   - Batch operations for GPU efficiency
+   - Monitor GPU memory usage
+
+## Common Issues
+
+### Memory Usage
+
+Problem: High memory usage during vector operations
+Solution:
+```python
+# Use memory-efficient index
+index = MemoryOptimizedIndex(
+    dimension=768,
+    max_memory_gb=4,
+)
+
+# Process in smaller batches
+for batch in chunked(vectors, 1000):
+    index.add(batch)
+```
+
+### Search Performance
+
+Problem: Slow similarity search
+Solution:
+```python
+# Use approximate search
+results = index.search(
+    query_vector,
+    k=5,
+    ef_search=40,  # trade accuracy for speed
+)
+```
+
+## Advanced Features
+
+### Custom Distance Metrics
+
+```python
+from wdbx.vectors import CustomMetric
+
+# Define custom distance metric
+class CosineSimilarity(CustomMetric):
+    def distance(self, a, b):
+        return 1 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+# Use custom metric
+index = VectorIndex(
+    dimension=768,
+    metric=CosineSimilarity(),
+)
+```
+
+### Dynamic Index Updates
+
+```python
+# Add new vectors
+index.add_items(new_vectors, new_ids)
+
+# Remove vectors
+index.remove_items(ids_to_remove)
+
+# Update vectors
+index.update_items(update_vectors, update_ids)
+```
+
+## Configuration Options
+
+### Index Parameters
+
+```python
+# HNSW parameters
+hnsw_params = {
+    "M": 16,  # connections per layer
+    "ef_construction": 200,  # search width during construction
+    "ef": 50,  # search width during search
+}
+
+# IVF parameters
+ivf_params = {
+    "nlist": 100,  # number of clusters
+    "nprobe": 10,  # number of clusters to search
+}
+```
+
+### Memory Settings
+
+```python
+# Memory configuration
+memory_config = {
+    "max_memory_gb": 4,
+    "auto_gc": True,
+    "gc_threshold": 0.8,
+}
+```
+
+## Benchmarking
+
+### Performance Testing
+
+```python
+from wdbx.vectors import benchmark
+
+# Run benchmark
+results = benchmark(
+    index,
+    test_vectors,
+    k=5,
+    batch_size=32,
+)
+
+# Print results
+print(f"QPS: {results['qps']}")
+print(f"Recall@5: {results['recall']}")
+```
+
+### Memory Testing
+
+```python
+from wdbx.vectors import memory_test
+
+# Test memory usage
+memory_stats = memory_test(
+    index,
+    test_vectors,
+    max_memory_gb=4,
+)
+```
+
+## Error Handling
+
+```python
+from wdbx.vectors import VectorError
+
+try:
+    results = index.search(query_vector)
+except VectorError as e:
+    if e.is_memory_error():
+        # Handle memory error
+        index.clear_cache()
+    elif e.is_dimension_error():
+        # Handle dimension mismatch
+        query_vector = resize_vector(query_vector)
+```
+
+## Resources
+
+- [Vector Index Types](https://wdbx.readthedocs.io/vector-indices)
+- [Performance Tuning](https://wdbx.readthedocs.io/performance)
+- [Memory Management](https://wdbx.readthedocs.io/memory)
+- [GPU Acceleration](https://wdbx.readthedocs.io/gpu) 

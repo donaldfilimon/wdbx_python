@@ -5,20 +5,21 @@ This example demonstrates how to configure and use the Discord bot plugin
 for WDBX, both as a plugin within the WDBX ecosystem and as a standalone application.
 """
 
-import os
+import asyncio
 import json
 import logging
-import asyncio
-from pathlib import Path
+import os
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("wdbx.examples.discord_bot")
 
 # Try importing required components
 try:
     from wdbx.client import WDBXClient
-    from wdbx.plugins import load_plugin_module, get_plugin
+    from wdbx.plugins import get_plugin, load_plugin_module
 except ImportError:
     logger.error("Failed to import WDBX modules. Make sure WDBX is installed.")
     raise
@@ -27,10 +28,10 @@ except ImportError:
 def create_config_file(output_path="discord_bot.json"):
     """
     Create a template configuration file for the Discord bot.
-    
+
     Args:
         output_path: Path to save the configuration file.
-    
+
     Returns:
         bool: True if the file was created successfully, False otherwise.
     """
@@ -44,17 +45,17 @@ def create_config_file(output_path="discord_bot.json"):
         "monitoring_interval": 300,
         "log_dir": "logs",
         "max_vectors_display": 10,
-        "allow_vector_deletion": False
+        "allow_vector_deletion": False,
     }
-    
+
     try:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        
+
         # Write config file
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(config, f, indent=2)
-        
+
         logger.info(f"Created template configuration file at {output_path}")
         return True
     except Exception as e:
@@ -65,35 +66,35 @@ def create_config_file(output_path="discord_bot.json"):
 async def run_as_plugin():
     """Run the Discord bot as a plugin within WDBX."""
     logger.info("Running Discord bot as a plugin")
-    
+
     # Connect to WDBX
     client = WDBXClient()
     client.connect(host="127.0.0.1", port=8080)
     logger.info("Connected to WDBX")
-    
+
     # Load the Discord bot plugin module
     load_plugin_module("wdbx.plugins.discord_bot")
-    
+
     # Get the plugin
     discord_plugin = get_plugin("discord_bot")
     if not discord_plugin:
         logger.error("Discord bot plugin not found")
         return
-    
+
     logger.info(f"Found Discord bot plugin: {discord_plugin.name} v{discord_plugin.version}")
     logger.info(f"Description: {discord_plugin.description}")
-    
+
     # Create an instance
     plugin_instance = discord_plugin()
-    
+
     # Initialize the plugin with the WDBX client
     success = plugin_instance.initialize(client)
     if not success:
         logger.error("Failed to initialize Discord bot plugin")
         return
-    
+
     logger.info("Discord bot plugin initialized successfully")
-    
+
     try:
         # Keep the bot running for demonstration
         logger.info("Discord bot is running. Press Ctrl+C to stop.")
@@ -110,7 +111,7 @@ async def run_as_plugin():
 def run_standalone():
     """Run the Discord bot as a standalone application."""
     logger.info("Running Discord bot in standalone mode")
-    
+
     # Ensure configuration file exists
     config_path = "discord_bot.json"
     if not os.path.exists(config_path):
@@ -119,11 +120,11 @@ def run_standalone():
         logger.info(f"Please edit {config_path} with your Discord bot token and other settings.")
         logger.info("Then run this example again.")
         return
-    
+
     # Import the standalone runner
     try:
         from wdbx.plugins.discord_bot import run_standalone
-        
+
         logger.info(f"Starting Discord bot with configuration from {config_path}")
         run_standalone(config_path)
     except ImportError:
@@ -142,9 +143,9 @@ def main():
     print("2. Run as a standalone application")
     print("3. Create template configuration file")
     print("4. Exit")
-    
+
     choice = input("Enter your choice (1-4): ")
-    
+
     if choice == "1":
         # Run as a plugin
         asyncio.run(run_as_plugin())
@@ -166,4 +167,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

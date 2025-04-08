@@ -1,74 +1,85 @@
 # WDBX Documentation
 
-This directory contains the documentation for the WDBX project.
+Welcome to the WDBX documentation system. This documentation is built using the new unified WDBX documentation builder with enhanced features and styling.
 
-## Building the Documentation
+## Overview
 
-### Prerequisites
+WDBX is a high-performance vector database and machine learning integration system that offers:
 
-- Python 3.8 or higher
-- Virtual environment (recommended)
+- Fast vector search and retrieval
+- Blockchain-based data validation
+- Advanced ML integration capabilities
+- Extensible plugin architecture
+- Cross-platform compatibility
 
-### Installation
+## Getting Started
 
-1. Activate your virtual environment:
+To get started with WDBX, follow these simple steps:
+
+1. **Installation**: Install WDBX using pip
+   ```
+   pip install wdbx
+   ```
+
+2. **Initialize**: Create a new WDBX instance
+   ```python
+   from wdbx import WDBX
+   
+   # Create a new WDBX instance
+   db = WDBX(data_dir="./data")
+   ```
+
+3. **Add data**: Store vectors and data
+   ```python
+   # Create a vector
+   vector = db.create_vector([0.1, 0.2, 0.3, 0.4], metadata={"source": "example"})
+   
+   # Create a block with data and embedding
+   block = db.create_block(
+       data={"text": "Example data", "category": "sample"},
+       embeddings=[vector]
+   )
+   ```
+
+4. **Search**: Find similar vectors and data
+   ```python
+   # Find similar vectors
+   results = db.find_similar_vectors([0.1, 0.2, 0.3, 0.4], top_k=5)
+   
+   # Search blocks
+   blocks = db.search_blocks("example query", top_k=5)
+   ```
+
+## Documentation Builder
+
+This documentation is built using the new unified `wdbx_builder.py` script which combines the best features from various documentation tools including:
+
+- Markdown to HTML conversion with beautiful styling
+- Sphinx integration for advanced documentation
+- File watching with live reload
+- Automated table of contents
+- Mobile-friendly responsive design
+- Dark mode support
+
+To build the documentation:
 
 ```bash
-# For Windows
-.\.venv\Scripts\Activate.ps1
-
-# For Linux/Mac
-source .venv/bin/activate
+python wdbx_builder.py --mode markdown --clean --open
 ```
 
-2. Install the required packages:
+To watch for changes:
 
 ```bash
-pip install -r docs/requirements.txt
+python wdbx_builder.py --mode markdown --watch
 ```
 
-### Building
+## Next Steps
 
-#### Using PowerShell (Windows)
+- Explore the [API Reference](api_reference.md)
+- Learn about the [Plugin System](plugin_system_overview.md)
+- Read about [Performance Optimization](performance_profiling.md)
+- Understand the [Project Structure](project_structure.md)
 
-Run the PowerShell script:
+## Contributing
 
-```powershell
-.\docs\build_docs.ps1
-```
-
-#### Using Python (Cross-platform)
-
-Run the Python script:
-
-```bash
-python docs/build_docs.py
-```
-
-#### Manually
-
-Navigate to the docs directory and run Sphinx directly:
-
-```bash
-cd docs
-sphinx-build -b html . _build/html
-```
-
-### Viewing the Documentation
-
-After building, open `docs/_build/html/index.html` in your web browser.
-
-## Documentation Structure
-
-- `index.rst`: Main entry point for the documentation
-- `conf.py`: Sphinx configuration file
-- `_static/`: Static files (CSS, JavaScript, images)
-- `_templates/`: Custom templates
-- `*.md`, `*.rst`: Documentation content files
-
-## Contributing to Documentation
-
-1. Write content in Markdown (`.md`) or reStructuredText (`.rst`) format
-2. Add your file to the appropriate toctree in `index.rst`
-3. Build and test the documentation locally
-4. Submit a pull request 
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get involved. 

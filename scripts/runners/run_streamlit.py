@@ -15,30 +15,34 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
+
 def main():
     """Run the Streamlit app."""
     # Path to the Streamlit app
     app_path = PROJECT_ROOT / "src" / "wdbx" / "ui" / "streamlit_app.py"
-    
+
     if not app_path.exists():
         print(f"Error: Streamlit app not found at {app_path}")
         return 1
-    
+
     # Check if streamlit is installed
     try:
-        import streamlit
+        pass
     except ImportError:
         print("Streamlit not found. Installing streamlit...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "streamlit", "plotly", "pandas"])
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "streamlit", "plotly", "pandas"]
+        )
         print("Streamlit installed successfully.")
-    
+
     # Launch the Streamlit app
     cmd = [sys.executable, "-m", "streamlit", "run", str(app_path)]
-    
+
     print(f"Launching Streamlit app: {app_path}")
     print(f"Command: {' '.join(cmd)}")
-    
+
     return subprocess.call(cmd)
 
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

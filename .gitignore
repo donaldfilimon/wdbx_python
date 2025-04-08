@@ -10,18 +10,23 @@ build/
 *.egg
 
 # Virtual environments
-venv/
+!venv/
 env/
 ENV/
 .env/
-.venv/
-
+!.venv/
+data/
+build/
 # Testing and coverage
 .coverage
 htmlcov/
 .pytest_cache/
 .tox/
-
+demo_visualizations/
+tmp_data/
+visualizations/
+wdbx_visualizations/
+wdbx_model_cache/
 # IDE files
 .idea/
 .vscode/
@@ -196,3 +201,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Redundant configuration files (consolidated into pyproject.toml)
+setup.cfg
+mypy.ini
+.flake8
+scripts/lint_config.py

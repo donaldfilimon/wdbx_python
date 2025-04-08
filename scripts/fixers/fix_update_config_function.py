@@ -3,13 +3,16 @@
 Fix the _update_config_value function in web_scraper.py
 """
 
+
 def fix_update_config_function():
-    with open('wdbx_plugins/web_scraper.py', 'r', encoding='utf-8') as file:
+    with open("wdbx_plugins/web_scraper.py", encoding="utf-8") as file:
         content = file.read()
-    
+
     # Define the problematic function that needs to be fixed
-    old_function = r"""def _update_config_value\(key: str, value: str\) -> bool:.*?def _normalize_url"""
-    
+    old_function = (
+        r"""def _update_config_value\(key: str, value: str\) -> bool:.*?def _normalize_url"""
+    )
+
     # Create the fixed version of the function
     new_function = """def _update_config_value(key: str, value: str) -> bool:
     \"\"\"
@@ -74,15 +77,17 @@ def fix_update_config_function():
 
 
 def _normalize_url"""
-    
+
     # Replace the function using regular expressions
     import re
+
     fixed_content = re.sub(old_function, new_function, content, flags=re.DOTALL)
-    
-    with open('wdbx_plugins/web_scraper.py', 'w', encoding='utf-8') as file:
+
+    with open("wdbx_plugins/web_scraper.py", "w", encoding="utf-8") as file:
         file.write(fixed_content)
-    
+
     print("Fixed _update_config_value function in web_scraper.py")
 
+
 if __name__ == "__main__":
-    fix_update_config_function() 
+    fix_update_config_function()

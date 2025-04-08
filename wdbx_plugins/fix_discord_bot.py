@@ -1,123 +1,160 @@
-#!/usr/bin/env python3
-"""
-Script to fix indentation and try/except issues in the Discord bot implementation.
-"""
-
+#!/usr/bin/env python
+"""Fix linter issues in discord_bot.py and structure code properly."""
+import os
 import re
 import sys
+import logging
+import argparse
+from pathlib import Path  # Remove if not needed after fixes
 
+# Set up logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger('fix_discord_bot')
 
-def fix_discord_bot():
-    """Fix linter errors in the Discord bot implementation."""
+def fix_discord_bot_issues(discord_bot_path):
+    """
+    Fix common linter issues in discord_bot.py.
+    
+    Args:
+        discord_bot_path: Path to the discord_bot.py file.
+    """
     try:
-        # Read the file - use the correct relative path
-        with open("discord_bot.py", encoding="utf-8") as file:
-            content = file.read()
+        if not os.path.exists(discord_bot_path):
+            logger.error("File not found: %s", discord_bot_path)  # Use lazy formatting
+            return False
+            
+        logger.info("Fixing linter issues in %s", discord_bot_path)  # Use lazy formatting
+        
+        with open(discord_bot_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Fix 1: Add proper indentation to mock commands class
+        mock_class_pattern = r'(class commands:.*?)(class tasks:)'
+        mock_class_content = re.search(mock_class_pattern, content, re.DOTALL)
+        
+        if mock_class_content:
+            old_commands_class = mock_class_content.group(1)
+            
+            # Add static methods and fix indentation
+            new_commands_class = re.sub(
+                r'(\s+)def (command|group|has_permissions)\(([^)]*)\):',
+                r'\1@staticmethod\n\1def \2(\3):',
+                old_commands_class
+            )
+            
+            # Fix the Cog subclass with listener method
+            new_commands_class = re.sub(
+                r'(\s+)(class Cog:)',
+                r'\1\2\n\1    @staticmethod\n\1    def listener():',
+                new_commands_class
+            )
+            
+            content = content.replace(old_commands_class, new_commands_class)
+        
+        # Fix 2: Add static method to tasks.loop
+        tasks_class_pattern = r'(class tasks:.*?)(\s+class|def|\s*$)'
+        tasks_class_content = re.search(tasks_class_pattern, content, re.DOTALL)
+        
+        if tasks_class_content:
+            old_tasks_class = tasks_class_content.group(1)
+            
+            # Add static methods to tasks.loop
+            new_tasks_class = re.sub(
+                r'(\s+)def (loop)\(([^)]*)\):',
+                r'\1@staticmethod\n\1def \2(\3):',
+                old_tasks_class
+            )
+            
+            content = content.replace(old_tasks_class, new_tasks_class)
+        
+        # Fix 3: Fix the connect_to_wdbx method to remove keyword arguments
+        connect_pattern = r'(def connect_to_wdbx.*?)client\.connect\(host=host, port=port\)(.*?\n)'
+        content = re.sub(connect_pattern, r'\1client.connect(host, port)\2', content)
+        
+        # Fix 4: Fix exception handling order in batch import
+        batch_import_pattern = r'(except NotImplementedError:.*?)(except WDBXClientError as e:.*?)(except Exception as e:)'
+        content = re.sub(batch_import_pattern, r'\2\1\3', content, flags=re.DOTALL)
+        
+        # Fix 5: Fix the redefined logger in run_bot function
+        run_bot_pattern = r'(def run_bot.*?\n\s+setup_logging.*?\n\s+)logger = (.*?)\n'
+        content = re.sub(run_bot_pattern, r'\1run_logger = \2\n', content)
+        
+        # Update all logger references in run_bot function
+        run_bot_logger_pattern = r'(def run_bot.*?)logger\.(.*?\n.*?)(def|\s*$)'
+        content = re.sub(run_bot_logger_pattern, r'\1run_logger.\2\3', content, flags=re.DOTALL)
+        
+        # Fix 6: Add health monitor null checks
+        health_check_pattern = r'(health_status = await self\.health_monitor\.check_health\(\))'
+        health_check_replacement = r'''if hasattr(self.health_monitor, 'check_health'):
+            health_status = await self.health_monitor.check_health()
+        else:
+            # Mock response if check_health doesn't exist
+            health_status = {
+                "overall_status": {"status": "UNKNOWN", "message": "Health check not available"},
+                "mock_check": {"status": "UNKNOWN", "message": "Mock health status"}
+            }'''
+        content = re.sub(health_check_pattern, health_check_replacement, content)
 
-        # Fix the first set of linter errors: Unindent amount and return outside function
-        # This is in the command decorators section
+        # Fix 7: Convert all logger.info calls using multiple arguments to f-strings
         content = re.sub(
-            r"@commands\.has_permissions\(.*\)\n(\s+)def decorator\(func\):\n(\s+)return func\n(\s+)return decorator",
-            r"@commands.has_permissions(\\1)\n\\1def decorator(func):\n\\1    return func\n\\1return decorator",
-            content,
+            r'logger\.info\("([^"]+)",\s*([^)]+)\)',
+            r'logger.info(f"\1".format(\2))',
+            content
         )
 
-        # Fix try statements without except clauses
-        # Status command
+        # Fix 8: Convert all logger.critical calls using multiple arguments to f-strings
         content = re.sub(
-            r'@self\.command\(name="status", help="Show WDBX status"\)\n\s+async def status\(ctx\):\n\s+"""Show WDBX status information\."""\n\s+if not self\.wdbx:\n\s+await ctx\.send\("❌ Bot is not connected to WDBX instance\."\)\n\s+return\n\n\s+try:',
-            r'@self.command(name="status", help="Show WDBX status")\n        async def status(ctx):\n            """Show WDBX status information."""\n            if not self.wdbx:\n                await ctx.send("❌ Bot is not connected to WDBX instance.")\n                return\n\n            try:',
-            content,
+            r'logger\.critical\("([^"]+)",\s*([^)]+)\)',
+            r'logger.critical(f"\1".format(\2))',
+            content
         )
 
-        # Health command
+        # Fix 9: Convert format strings to f-strings in the main section
         content = re.sub(
-            r'@self\.command\(name="health", help="Show detailed health information"\)\n\s+async def health\(ctx\):\n\s+"""Show detailed health information\."""\n\s+if not self\.wdbx or not self\.health_monitor:\n\s+await ctx\.send\("❌ Health monitoring is not available\."\)\n\s+return\n\n\s+try:',
-            r'@self.command(name="health", help="Show detailed health information")\n        async def health(ctx):\n            """Show detailed health information."""\n            if not self.wdbx or not self.health_monitor:\n                await ctx.send("❌ Health monitoring is not available.")\n                return\n\n            try:',
-            content,
+            r'print\("Error: \{\}".format\(([^)]+)\)\)',
+            r'print(f"Error: {\1}")',
+            content
         )
 
-        # Search command
-        content = re.sub(
-            r'@self\.command\(name="search", help="Search for vectors"\)\n\s+async def search\(ctx, query: str, top_k: int = 5\):\n\s+"""\n\s+Search for vectors in WDBX\.\n\s+\n\s+Args:\n\s+query: Search query\n\s+top_k: Number of results to return\n\s+"""\n\s+if not self\.wdbx:\n\s+await ctx\.send\("❌ Bot is not connected to WDBX instance\."\)\n\s+return\n\s+\n\s+try:',
-            r'@self.command(name="search", help="Search for vectors")\n        async def search(ctx, query: str, top_k: int = 5):\n            """\n            Search for vectors in WDBX.\n            \n            Args:\n                query: Search query\n                top_k: Number of results to return\n            """\n            if not self.wdbx:\n                await ctx.send("❌ Bot is not connected to WDBX instance.")\n                return\n            \n            try:',
-            content,
-        )
+        # Fix 10: Fix the connect_to_wdbx logging
+        connect_to_wdbx_logging = r'(def connect_to_wdbx.*?)logger\.info\("Successfully connected to WDBX at %s:%s", host, port\)(.*?\n)'
+        content = re.sub(connect_to_wdbx_logging, r'\1logger.info(f"Successfully connected to WDBX at {host}:{port}")\2', content, flags=re.DOTALL)
 
-        # Fix the expected expression and unexpected indentation errors in the search command
-        content = re.sub(
-            r'except Exception as e:\n\s+logger\.error\(f"Error searching: \{e\}", exc_info=True\)\n\s+await ctx\.send\(f"❌ Error during search: \{str\(e\)\}"\)',
-            r'            except Exception as e:\n                logger.error(f"Error searching: {e}", exc_info=True)\n                await ctx.send(f"❌ Error during search: {str(e)}")',
-            content,
-        )
+        # Fix 11: Fix error handling in connect_to_wdbx
+        error_connect_pattern = r'(def connect_to_wdbx.*?except.*?)logger\.error\("Failed to connect to WDBX at %s:%s: %s", host, port, str\(e\)\)(.*?\n)'
+        content = re.sub(error_connect_pattern, r'\1error_msg = f"Failed to connect to WDBX at {host}:{port}: {str(e)}"\n        logger.error(error_msg)\2', content, flags=re.DOTALL)
 
-        # Fix the visualize command
-        content = re.sub(
-            r'@self\.command\(name="visualize", help="Visualize vectors in 2D space"\)\n\s+async def visualize\(ctx, query: str = None, n_vectors: int = 20\):\n\s+"""\n\s+Visualize vectors in 2D space using PCA\.\n\s+\n\s+Args:\n\s+query: Optional search query to filter vectors\n\s+n_vectors: Number of vectors to visualize\n\s+"""\n\s+if not self\.wdbx:\n\s+await ctx\.send\("❌ Bot is not connected to WDBX instance\."\)\n\s+return\n\s+\n\s+if not VISUALIZATION_AVAILABLE:\n\s+await ctx\.send\("❌ Visualization libraries not available\. Install matplotlib, numpy, and scikit-learn\."\)\n\s+return\n\s+\n\s+try:',
-            r'@self.command(name="visualize", help="Visualize vectors in 2D space")\n        async def visualize(ctx, query: str = None, n_vectors: int = 20):\n            """\n            Visualize vectors in 2D space using PCA.\n            \n            Args:\n                query: Optional search query to filter vectors\n                n_vectors: Number of vectors to visualize\n            """\n            if not self.wdbx:\n                await ctx.send("❌ Bot is not connected to WDBX instance.")\n                return\n                \n            if not VISUALIZATION_AVAILABLE:\n                await ctx.send("❌ Visualization libraries not available. Install matplotlib, numpy, and scikit-learn.")\n                return\n                \n            try:',
-            content,
-        )
-
-        # Fix visualize command indentation issues
-        content = re.sub(
-            r"else:\n\s+label = str\(v\.vector_id\)\[.*\]\n\s+labels\.append\(label\)",
-            r"                            else:\n                                label = str(v.vector_id)[:10]\n                            labels.append(label)",
-            content,
-        )
-
-        # Fix the expected expression and unexpected indentation in visualize command
-        content = re.sub(
-            r'except Exception as e:\n\s+logger\.error\(f"Error visualizing vectors: \{e\}", exc_info=True\)\n\s+await ctx\.send\(f"❌ Error visualizing vectors: \{str\(e\)\}"\)',
-            r'            except Exception as e:\n                logger.error(f"Error visualizing vectors: {e}", exc_info=True)\n                await ctx.send(f"❌ Error visualizing vectors: {str(e)}")',
-            content,
-        )
-
-        # Fix the admin command
-        content = re.sub(
-            r'@self\.command\(name="admin", help="Administrative commands"\)\n\s+@commands\.has_permissions\(administrator=True\)\n\s+async def admin\(ctx, action: str, \*args\):\n\s+"""\n\s+Perform administrative actions\.\n\s+\n\s+Args:\n\s+action: Action to perform \(status, clear, optimize\)\n\s+args: Additional arguments for the action\n\s+"""\n\s+if not self\.wdbx:\n\s+await ctx\.send\("❌ Bot is not connected to WDBX instance\."\)\n\s+return\n\s+\n\s+try:',
-            r'@self.command(name="admin", help="Administrative commands")\n        @commands.has_permissions(administrator=True)\n        async def admin(ctx, action: str, *args):\n            """\n            Perform administrative actions.\n            \n            Args:\n                action: Action to perform (status, clear, optimize)\n                args: Additional arguments for the action\n            """\n            if not self.wdbx:\n                await ctx.send("❌ Bot is not connected to WDBX instance.")\n                return\n                \n            try:',
-            content,
-        )
-
-        # Fix the indentation in admin confirmations
-        content = re.sub(
-            r'else:\n\s+await ctx\.send\("❌ Clear operation not supported by WDBX instance\."\)',
-            r'                            else:\n                                await ctx.send("❌ Clear operation not supported by WDBX instance.")',
-            content,
-        )
-
-        # Fix the config command
-        content = re.sub(
-            r'@self\.command\(name="config", help="Generate a template configuration file"\)\n\s+async def config\(ctx\):\n\s+"""Generate a template configuration file for the bot\."""\n\s+try:',
-            r'@self.command(name="config", help="Generate a template configuration file")\n        async def config(ctx):\n            """Generate a template configuration file for the bot."""\n            try:',
-            content,
-        )
-
-        # Fix expected expression in config command
-        content = re.sub(
-            r'except Exception as e:\n\s+logger\.error\(f"Error generating config: \{e\}", exc_info=True\)\n\s+await ctx\.send\(f"❌ Error generating config: \{str\(e\)\}"\)',
-            r'            except Exception as e:\n                logger.error(f"Error generating config: {e}", exc_info=True)\n                await ctx.send(f"❌ Error generating config: {str(e)}")',
-            content,
-        )
-
-        # Remove duplicate example methods
-        content = re.sub(
-            r'def _register_commands\(self\):\n\s+"""Register bot commands\."""\n\s+\n\s+@self\.command\(name="status", help="Show WDBX status"\)\n\s+async def status\(ctx\):[^@]+?@self\.command\(name="health", help="Show detailed health information"\)',
-            r'def _register_commands(self):\n        """Register bot commands."""\n        \n        @self.command(name="health", help="Show detailed health information")',
-            content,
-        )
-
-        # Write the fixed content back to the file - use the correct relative path
-        with open("discord_bot.py", "w", encoding="utf-8") as file:
-            file.write(content)
-
-        print("Successfully fixed linter errors in discord_bot.py")
+        # Fix 12: Fix run_bot logging for critical errors with multiple args
+        run_bot_error_pattern = r'(def run_bot.*?except.*?else:.*?)logger\.critical\("An unexpected error occurred while running the bot: %s", e\)(.*?\n)'
+        content = re.sub(run_bot_error_pattern, r'\1error_msg = "An unexpected error occurred while running the bot: " + str(e)\n            logger.critical(error_msg, exc_info=True)\2', content, flags=re.DOTALL)
+        
+        # Write the updated content back to the file
+        with open(discord_bot_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+            
+        logger.info("Successfully fixed linter issues in %s", discord_bot_path)  # Use lazy formatting
         return True
     except Exception as e:
-        print(f"Error fixing Discord bot: {str(e)}")
+        # Add specific exception types when possible
+        logger.error("Error fixing linter issues: %s", str(e), exc_info=True)  # Use lazy formatting
         return False
 
+def main():
+    """Run the fixer script with command line arguments."""
+    parser = argparse.ArgumentParser(description='Fix linter issues in discord_bot.py')
+    parser.add_argument('--path', type=str, default='src/wdbx/plugins/discord_bot.py',
+                        help='Path to discord_bot.py file (default: src/wdbx/plugins/discord_bot.py)')
+    
+    args = parser.parse_args()
+    
+    if fix_discord_bot_issues(args.path):
+        sys.exit(0)
+    else:
+        sys.exit(1)
 
-if __name__ == "__main__":
-    success = fix_discord_bot()
-    sys.exit(0 if success else 1)
+if __name__ == '__main__':
+    main()

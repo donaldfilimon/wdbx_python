@@ -1,3 +1,138 @@
+# Contributing Guide
+
+<!-- category: Development -->
+<!-- priority: 45 -->
+<!-- tags: contributing, development, guidelines, workflow -->
+
+This guide explains how to contribute to the WDBX project.
+
+## Getting Started
+
+1. Fork the repository
+2. Clone your fork
+3. Set up the development environment
+4. Create a new branch for your work
+
+## Development Environment
+
+### Prerequisites
+
+- Python 3.9 or higher
+- Git
+- Poetry (recommended) or pip
+
+### Setup
+
+1. Install dependencies:
+   ```bash
+   poetry install
+   # or
+   pip install -r requirements.txt
+   ```
+
+2. Install pre-commit hooks:
+   ```bash
+   pre-commit install
+   ```
+
+## Development Workflow
+
+1. Create a feature branch:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. Make your changes:
+   - Follow code style guidelines
+   - Add tests for new functionality
+   - Update documentation
+
+3. Run tests:
+   ```bash
+   pytest
+   ```
+
+4. Run linters:
+   ```bash
+   ruff check .
+   black .
+   mypy .
+   ```
+
+## Pull Request Process
+
+1. Update documentation
+2. Run all tests
+3. Push changes to your fork
+4. Create a pull request
+5. Address review feedback
+
+## Documentation
+
+- Update relevant documentation
+- Follow documentation standards
+- Include code examples
+- Add docstrings for new code
+
+## Testing
+
+### Writing Tests
+
+- Write unit tests for new code
+- Include integration tests
+- Test edge cases
+- Maintain test coverage
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=wdbx
+
+# Run specific test file
+pytest tests/test_specific.md
+```
+
+## Code Style
+
+Follow the project's code style:
+
+- Use Black for formatting
+- Follow PEP 8 guidelines
+- Add type hints
+- Write clear docstrings
+
+## Commit Messages
+
+Write clear commit messages:
+
+```
+feat: Add new vector search algorithm
+
+- Implement HNSW index
+- Add configuration options
+- Update documentation
+- Add performance tests
+```
+
+## Release Process
+
+1. Update version number
+2. Update changelog
+3. Create release notes
+4. Tag the release
+5. Build distribution
+6. Upload to PyPI
+
+## Additional Resources
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Issue Tracker](https://github.com/wdbx/wdbx-python/issues)
+- [Development Documentation](https://wdbx.io/docs/development/)
+
 # Contributing to WDBX Python
 
 Thank you for considering contributing to WDBX Python! This document provides guidelines to help maintain code quality and avoid common issues.

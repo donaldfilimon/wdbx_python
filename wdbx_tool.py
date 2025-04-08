@@ -11,7 +11,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional, Any
 
 SCRIPT_DIR = Path(__file__).parent / "scripts"
 PROJECT_ROOT = Path(__file__).parent
@@ -24,7 +24,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("wdbx_tool")
 
-def setup_environment(env_file=None):
+
+def setup_environment(env_file: Optional[str] = None) -> Dict[str, str]:
     """Set up environment variables from .env file or defaults."""
     env_vars = {
         "WDBX_DATA_DIR": str(PROJECT_ROOT / "data"),
@@ -32,90 +33,107 @@ def setup_environment(env_file=None):
         "WDBX_MAX_MEMORY_PERCENT": "85.0",
         "WDBX_MEMORY_CHECK_INTERVAL": "10",
     }
-    
+
     # Load from .env file if it exists
     if env_file and os.path.exists(env_file):
-        logger.info(f"Loading environment from {env_file}")
+        logger.info("Loading environment from %s", env_file)
         with open(env_file) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
                     env_vars[key.strip()] = value.strip()
-    
+
     # Set environment variables
     for key, value in env_vars.items():
         if key not in os.environ:
             os.environ[key] = value
-            logger.debug(f"Set {key}={value}")
-    
+            logger.debug("Set %s=%s", key, value)
+
     return env_vars
+
 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="WDBX Tool Launcher")
-    
+
     # Global arguments
     parser.add_argument("--env", help="Path to .env file for configuration")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--data-dir", help="Override data directory")
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Command to run", required=True)
-    
+
     # Application runners
     run_parser = subparsers.add_parser("run", help="Run WDBX application")
-    run_parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
+    run_parser.add_argument(
+        "--interactive", "-i", action="store_true", help="Run in interactive mode"
+    )
     run_parser.add_argument("--port", "-p", type=int, default=8080, help="HTTP port")
     run_parser.add_argument("--config", "-c", help="Path to configuration file")
-    
+
     # Web UI
     web_parser = subparsers.add_parser("web", help="Run WDBX web UI")
     web_parser.add_argument("--port", "-p", type=int, default=3000, help="Web UI port")
-    web_parser.add_argument("--theme", choices=["light", "dark", "auto"], default="auto", help="UI theme")
-    
+    web_parser.add_argument(
+        "--theme", choices=["light", "dark", "auto"], default="auto", help="UI theme"
+    )
+
     # Streamlit
     streamlit_parser = subparsers.add_parser("streamlit", help="Run Streamlit visualization")
     streamlit_parser.add_argument("--port", type=int, default=8501, help="Streamlit port")
-    
+
     # Tests
     test_parser = subparsers.add_parser("test", help="Run tests")
     test_parser.add_argument("--coverage", action="store_true", help="Run with coverage")
     test_parser.add_argument("--unit", action="store_true", help="Run unit tests only")
-    test_parser.add_argument("--integration", action="store_true", help="Run integration tests only")
+    test_parser.add_argument(
+        "--integration", action="store_true", help="Run integration tests only"
+    )
     test_parser.add_argument("--xml", action="store_true", help="Generate XML report")
     test_parser.add_argument("--pattern", help="Test name pattern to match")
-    
+
     # Benchmarks
     benchmark_parser = subparsers.add_parser("benchmark", help="Run benchmarks")
     benchmark_parser.add_argument("--vectors", type=int, default=10000, help="Number of vectors")
     benchmark_parser.add_argument("--dimension", type=int, default=768, help="Vector dimension")
-    benchmark_parser.add_argument("--backend", choices=["numpy", "torch", "jax", "all"], default="all", 
-                              help="ML backend to benchmark")
+    benchmark_parser.add_argument(
+        "--backend",
+        choices=["numpy", "torch", "jax", "all"],
+        default="all",
+        help="ML backend to benchmark",
+    )
     benchmark_parser.add_argument("--output", help="Path to save benchmark results")
-    
+
     # Linters
     lint_parser = subparsers.add_parser("lint", help="Run linters")
     lint_parser.add_argument("--fix", action="store_true", help="Fix issues automatically")
     lint_parser.add_argument("--path", type=str, default="src", help="Path to lint")
-    
+
     # Create new subparser for database management
     db_parser = subparsers.add_parser("db", help="Database management")
-    db_parser.add_argument("action", choices=["init", "status", "cleanup", "backup", "restore"], 
-                        help="Database action to perform")
+    db_parser.add_argument(
+        "action",
+        choices=["init", "status", "cleanup", "backup", "restore"],
+        help="Database action to perform",
+    )
     db_parser.add_argument("--target", help="Target file for backup/restore")
-    
+
     # Create metrics collection subparser
     metrics_parser = subparsers.add_parser("metrics", help="Collect performance metrics")
     metrics_parser.add_argument("--output-dir", "-o", help="Directory to store metrics output")
-    metrics_parser.add_argument("--interval", "-i", type=int, default=5, 
-                            help="Collection interval in seconds (default: 5)")
-    metrics_parser.add_argument("--duration", "-d", type=int, 
-                            help="Duration in seconds (default: run until interrupted)")
+    metrics_parser.add_argument(
+        "--interval", "-i", type=int, default=5, help="Collection interval in seconds (default: 5)"
+    )
+    metrics_parser.add_argument(
+        "--duration", "-d", type=int, help="Duration in seconds (default: run until interrupted)"
+    )
     metrics_parser.add_argument("--server", "-s", help="Connect to WDBX server at host:port")
-    
+
     return parser.parse_args()
 
-def build_command(args) -> List[str]:
+
+def build_command(args: argparse.Namespace) -> List[str]:
     """Build the command list based on parsed arguments."""
     command_name = args.command
     cmd = [sys.executable]  # Start with the python interpreter
@@ -198,7 +216,7 @@ def build_command(args) -> List[str]:
             cmd.extend(["--duration", str(args.duration)])
         if args.server:
             cmd.extend(["--server", args.server])
-        if args.verbose: # Pass verbose flag to metrics script
+        if args.verbose:  # Pass verbose flag to metrics script
             cmd.append("--verbose")
 
     else:
@@ -208,47 +226,50 @@ def build_command(args) -> List[str]:
 
     return cmd
 
+
 def run_command(cmd: List[str]) -> int:
     """Run the constructed command using subprocess.run for better safety."""
-    logger.info(f"Running: {' '.join(cmd)}")
+    logger.info("Running: %s", " ".join(cmd))
     try:
         # Use subprocess.run instead of subprocess.call
         # check=True will raise CalledProcessError if command fails (non-zero exit code)
-        result = subprocess.run(cmd, check=False) # Set check=False to handle errors manually
+        result = subprocess.run(cmd, check=False)  # Set check=False to handle errors manually
         if result.returncode != 0:
-            logger.error(f"Command failed with exit code {result.returncode}")
+            logger.error("Command failed with exit code %d", result.returncode)
             return result.returncode
-        return 0 # Success
+        return 0  # Success
     except FileNotFoundError:
-        logger.error(f"Error: The command or script '{cmd[1]}' was not found.")
+        logger.error("Error: The command or script '%s' was not found.", cmd[1])
         return 1
     except Exception as e:
-        logger.error(f"Error running command: {e}")
+        logger.error("Error running command: %s", e)
         return 1
 
-def main():
+
+def main() -> int:
     """Main entry point for the WDBX tool launcher."""
     args = parse_args()
-    
+
     # Set up logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Verbose logging enabled.")
-    
+
     # Set up environment
     setup_environment(args.env)
-    
+
     # Override data dir if specified
     if args.data_dir:
         os.environ["WDBX_DATA_DIR"] = args.data_dir
-        logger.info(f"Using data directory: {args.data_dir}")
-    
+        logger.info("Using data directory: %s", args.data_dir)
+
     # Build the command based on arguments
     cmd_to_run = build_command(args)
-    
+
     # Run the command
     exit_code = run_command(cmd_to_run)
     return exit_code
 
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

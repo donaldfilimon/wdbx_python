@@ -1,223 +1,88 @@
-WDBX Documentation
-=================
+Welcome to WDBX Documentation
+============================
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Overview
-   :hidden:
+WDBX is a high-performance vector database and ML integration system designed for modern AI applications. 🚀
 
-   landing
-   features
-   installation
-   quick-start
+.. raw:: html
 
-.. toctree::
-   :maxdepth: 2
-   :caption: User Guides
-   :hidden:
-
-   user_guide
-   usage/vector_operations
-   usage/search_config
-   usage/metadata_management
-   usage/db_management
-   usage/error_handling
-   ML_INTEGRATION
-   diagnostics
-   performance_profiling
-
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference
-   :hidden:
-
-   api/core
-   api/client
-   api/storage
-   api/search
-   api/utils
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Plugins
-   :hidden:
-
-   plugins/index
-   plugins/development
-   discord_bot
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Operations
-   :hidden:
-
-   DEPLOYMENT
-   monitoring
-   backup_recovery
-   scaling
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Diagnostics & Debugging
-   :hidden:
-
-   linting
-   diagnostics_visualization
-   debugging_tools
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Development
-   :hidden:
-
-   CONTRIBUTING
-   CODE_QUALITY
-   testing_strategy
-   design_principles
-
-.. include:: landing.md
-
-===============================
-WDBX Documentation
-===============================
-
-.. image:: _static/wdbx_banner.png
-   :alt: WDBX Banner
-   :align: center
-
-WDBX is a high-performance vector database and search engine optimized for machine learning embeddings.
+    <div class="admonition note">
+        <p class="admonition-title">✨ Latest Version</p>
+        <p>This documentation is for WDBX version 0.1.0. For other versions, please check our <a href="https://github.com/wdbx/wdbx/releases">release page</a>.</p>
+    </div>
 
 Features
 --------
 
-- **Multiple ML Backend Support**: Integration with various machine learning backends like PyTorch, TensorFlow, and FAISS
-- **Memory Optimization**: Advanced memory management for handling large embedding datasets
-- **Vector Operations**: Efficient similarity search, dimensionality reduction, and vector manipulation
-- **Flexible API**: HTTP API with OpenAPI documentation and both synchronous and asynchronous client libraries
-- **Kubernetes Ready**: Production-grade deployment configurations for cloud environments
-- **Benchmarking Tools**: Compare performance against other vector databases
-- **OpenAPI Documentation**: Comprehensive API documentation with Swagger UI
+* **⚡ Fast Vector Search**: Efficient similarity search with support for multiple distance metrics
+* **🤖 ML Integration**: Seamless integration with popular ML frameworks
+* **🌐 Distributed Processing**: Scale your vector operations across multiple nodes
+* **🔌 REST API**: Modern HTTP interface for easy integration
+* **🐍 Python Client**: Intuitive Python interface for rapid development
+* **🔧 Plugin System**: Extend functionality with custom plugins
+* **📊 Monitoring**: Built-in health checks and performance metrics
 
 Getting Started
 --------------
-
-Installation
-~~~~~~~~~~~
-
-Install WDBX using pip:
-
-.. code-block:: bash
-
-   pip install wdbx
-
-Quick Start
-~~~~~~~~~~
-
-.. code-block:: python
-
-   from wdbx.client import WDBXClient
-   import numpy as np
-
-   # Initialize WDBX client
-   client = WDBXClient(vector_dimension=1536)
-
-   # Create vectors
-   vector1 = client.create_vector(
-       vector_data=np.random.rand(1536).astype(np.float32),
-       metadata={"description": "Example vector 1"}
-   )
-   
-   vector2 = client.create_vector(
-       vector_data=np.random.rand(1536).astype(np.float32),
-       metadata={"description": "Example vector 2"}
-   )
-
-   # Calculate similarity
-   similarity = client.core.cosine_similarity(vector1, vector2)
-   print(f"Similarity: {similarity:.4f}")
-
-   # Search for similar vectors
-   results = client.find_similar_vectors(query=vector1, top_k=5)
-   for vector_id, score in results:
-       print(f"Vector ID: {vector_id}, Score: {score:.4f}")
-
-   # Shut down
-   client.disconnect()
-
-Contents
---------
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
-   introduction
+   getting_started
    installation
    quickstart
-   cli
-   
-.. toctree::
-   :maxdepth: 2
-   :caption: User Guide:
-
-   guide/configuration
-   guide/vectors
-   guide/blocks
-   guide/searching
-   guide/persistence
-   guide/memory
-   guide/performance
-   
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference:
-   
-   api/client
-   api/core
-   api/ml_backend
-   api/http
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Plugins:
-   
-   plugins/discord_bot
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Operations:
-   
+   configuration
+   client
+   deployment
    monitoring
-   operations/deployment
-   operations/scaling
-   operations/security
-   operations/backup
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Documentation:
-   
+   cli
+   api/client
+   api_reference
+   CODE_QUALITY
+   CONTRIBUTING
+   DEPLOYMENT
+   ML_INTEGRATION
+   NEXT_STEPS
+   PLUGIN_SYSTEM
+   RECENT_UPDATES
+   RESTRUCTURING
+   STORAGE
+   TESTING_FRAMEWORK
+   WINDOWS_COMPATIBILITY
    diagnostics
    diagnostics_visualization
-   performance_profiling
-   optimized_vector_operations
+   doc_builder_features
+   examples_improvements
+   improvements_summary
+   landing
    linting
+   optimized_vector_operations
+   performance_profiling
+   plugin_development
+   plugin_system_overview
+   plugins
+   project_structure
+   testing_plugins
+
+API Reference
+------------
 
 .. toctree::
-   :maxdepth: 1
-   :caption: Development & Planning:
+   :maxdepth: 2
+   :caption: API Reference
 
-   CONTRIBUTING
-   CODE_QUALITY
-   ML_INTEGRATION
-   DEPLOYMENT
-   NEXT_STEPS
-   RESTRUCTURING
-   improvements_summary
+   api/client
 
-Indices and tables
-==================
+Indices and Tables
+-----------------
 
 * :ref:`genindex`
 * :ref:`modindex`
-* :ref:`search` 
+* :ref:`search`
+
+.. raw:: html
+
+    <div class="admonition tip">
+        <p class="admonition-title">💡 Pro Tip</p>
+        <p>Use the search function in the sidebar to quickly find what you're looking for. You can also use the dark mode toggle for a different viewing experience!</p>
+    </div> 

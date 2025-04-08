@@ -1,204 +1,245 @@
-# WDBX Diagnostics Module
+# Diagnostics Guide
 
-The WDBX Diagnostics module provides a comprehensive system for monitoring and collecting metrics about your application's performance and resource usage. This document explains how to use this module effectively.
+<!-- category: Development -->
+<!-- priority: 65 -->
+<!-- tags: diagnostics, monitoring, debugging, profiling -->
 
-## Basic Usage
+This guide explains how to use WDBX's diagnostic tools.
 
-### Starting and Stopping Monitoring
+## Overview
 
-The simplest way to use the diagnostics module is through the global monitoring functions:
+WDBX provides comprehensive diagnostic tools for:
+
+- Performance monitoring
+- Error tracking
+- Resource usage
+- System health
+
+## Diagnostic Tools
+
+### Performance Monitoring
 
 ```python
-from wdbx.utils import start_monitoring, stop_monitoring, get_metrics
+from wdbx.diagnostics import monitor
 
-# Start monitoring system resources
-start_monitoring()
+# Monitor function performance
+@monitor
+def process_vectors(vectors):
+    return [process(v) for v in vectors]
 
-# Your application code here...
-
-# Get current metrics
-metrics = get_metrics()
-print(f"Memory usage: {metrics['memory_usage']}%")
-print(f"CPU usage: {metrics['cpu_usage']}%")
-
-# Stop monitoring when done
-stop_monitoring()
+# Monitor specific metrics
+with monitor.track("vector_processing"):
+    results = process_vectors(data)
 ```
 
-### Timing Operations
-
-The diagnostics module provides two ways to time operations:
-
-#### Using the Context Manager (Recommended)
+### Resource Usage
 
 ```python
-from wdbx.utils import time_this
+from wdbx.diagnostics import ResourceMonitor
 
-# Time a block of code
-with time_this("database_query"):
-    # Your database query code here
-    results = db.execute_query("SELECT * FROM users")
+# Track memory usage
+with ResourceMonitor() as rm:
+    process_large_dataset()
+    
+print(f"Peak memory: {rm.peak_memory_mb}MB")
 ```
 
-#### Using the Function Wrapper
+### Error Tracking
 
 ```python
-from wdbx.utils import time_operation
+from wdbx.diagnostics import ErrorTracker
 
-def my_function(x, y):
-    # Function code here
-    return x + y
+tracker = ErrorTracker()
 
-# Time the function call
-result = time_operation("my_operation", my_function, 5, 7)
+try:
+    process_data()
+except Exception as e:
+    tracker.record_error(e)
+    
+# Get error statistics
+stats = tracker.get_stats()
 ```
 
-### Logging Events
+## System Health
 
-You can log custom events to track important moments in your application:
+### Health Checks
 
 ```python
-from wdbx.utils import log_event
+from wdbx.diagnostics import HealthCheck
 
-# Log an informational event
-log_event("info", {
-    "message": "User logged in",
-    "user_id": 12345,
-    "ip_address": "192.168.1.1"
+health = HealthCheck()
+status = health.check_all()
+
+print(f"System health: {status['overall']}")
+for check in status['checks']:
+    print(f"{check['name']}: {check['status']}")
+```
+
+### Performance Profiling
+
+```python
+from wdbx.diagnostics import Profiler
+
+with Profiler() as p:
+    process_vectors(large_dataset)
+    
+p.print_stats()
+```
+
+## Logging
+
+### Configuration
+
+```python
+import logging
+from wdbx.diagnostics import setup_logging
+
+setup_logging(
+    level="DEBUG",
+    format="json",
+    output="logs/wdbx.log"
+)
+```
+
+### Usage
+
+```python
+logger = logging.getLogger("wdbx")
+
+logger.debug("Processing vector batch", extra={
+    "batch_size": len(vectors),
+    "dimension": vectors[0].shape[0]
 })
-
-# Log a warning event
-log_event("warning", {
-    "message": "High memory usage detected",
-    "memory_percent": 87.5
-})
-
-# Log an error event
-log_event("error", {
-    "message": "Database connection failed",
-    "error": "Connection timeout"
-})
 ```
 
-## Advanced Usage
+## Metrics
 
-### Creating a Custom Monitor
-
-You can create your own instance of `SystemMonitor` with custom settings:
+### Collection
 
 ```python
-from wdbx.utils.diagnostics import SystemMonitor
+from wdbx.diagnostics import metrics
 
-# Create a custom monitor with shorter check interval
-monitor = SystemMonitor(
-    check_interval=1,  # Check every second
-    max_history_points=500,  # Store up to 500 data points
-    threshold_memory_percent=90.0,  # Higher memory threshold
-    auto_start=True  # Start monitoring immediately
+# Record metrics
+metrics.increment("vectors_processed")
+metrics.gauge("memory_usage", get_memory_usage())
+metrics.histogram("processing_time", duration)
+```
+
+### Visualization
+
+```python
+from wdbx.diagnostics import MetricsVisualizer
+
+viz = MetricsVisualizer()
+viz.plot_metric("processing_time")
+viz.show()
+```
+
+## Debugging
+
+### Debug Mode
+
+```python
+from wdbx import WDBX
+from wdbx.diagnostics import enable_debug
+
+# Enable debug mode
+enable_debug()
+
+# Create instance with debug logging
+db = WDBX(debug=True)
+```
+
+### Interactive Debugging
+
+```python
+from wdbx.diagnostics import debug_shell
+
+# Start interactive debug shell
+debug_shell()
+```
+
+## Performance Analysis
+
+### Bottleneck Detection
+
+```python
+from wdbx.diagnostics import analyze_performance
+
+report = analyze_performance(
+    target_function=process_vectors,
+    sample_data=test_vectors
 )
 
-# Use the custom monitor's methods
-monitor.log_event("info", {"message": "Using custom monitor"})
-
-# Use the context manager directly on the monitor
-with monitor.time_operation("custom_operation"):
-    # Your code here
-    pass
-
-# Stop the custom monitor when done
-monitor.stop_monitoring()
+print(report.bottlenecks)
 ```
 
-### Monitoring Custom Components
-
-You can register your own components to be monitored:
+### Memory Analysis
 
 ```python
-from wdbx.utils import register_component
+from wdbx.diagnostics import MemoryAnalyzer
 
-class MyComponent:
-    def __init__(self):
-        self.query_count = 0
-        self.cache_hits = 0
-        self.cache_misses = 0
-        
-    def get_metrics(self):
-        # This method is called by the monitor to collect metrics
-        return {
-            "queries": self.query_count,
-            "cache_hits": self.cache_hits,
-            "cache_misses": self.cache_misses,
-            "cache_hit_ratio": self.cache_hits / (self.cache_hits + self.cache_misses + 0.001)
-        }
-        
-    def perform_query(self):
-        self.query_count += 1
-        # Query logic...
+analyzer = MemoryAnalyzer()
+snapshot = analyzer.take_snapshot()
 
-# Create your component
-my_component = MyComponent()
+# Do some work
+process_large_dataset()
 
-# Register it with the monitoring system
-register_component("my_custom_component", my_component)
+# Compare memory usage
+diff = analyzer.compare_with_snapshot(snapshot)
+print(diff.summary())
 ```
 
-## Memory Management
+## Reporting
 
-The diagnostics module includes automatic memory management to prevent excessive memory usage during long-running operations:
+### Generate Reports
 
-- Event logs older than 24 hours are automatically removed
-- Metric history data points older than 7 days are automatically removed
-- Operation timers are cleaned up when they are no longer needed
+```python
+from wdbx.diagnostics import Report
 
-## Error Handling
+report = Report()
+report.add_section("Performance")
+report.add_metrics(metrics.get_all())
+report.add_section("Errors")
+report.add_errors(tracker.get_errors())
 
-The diagnostics module includes robust error handling to prevent monitoring issues from affecting your application:
+report.save("diagnostic_report.pdf")
+```
 
-- If `psutil` is not available, the module will still work but with limited functionality
-- Disk usage errors are properly handled and won't cause your application to crash
-- All monitoring operations are performed in a separate thread to avoid impacting main application performance
+### Automated Monitoring
+
+```python
+from wdbx.diagnostics import Monitor
+
+monitor = Monitor(
+    interval=60,  # seconds
+    metrics=["cpu", "memory", "throughput"],
+    alert_threshold=0.8
+)
+
+monitor.start()
+```
 
 ## Best Practices
 
-1. **Always Stop Monitoring**: Call `stop_monitoring()` when your application exits to properly clean up resources
-2. **Use Context Managers**: Prefer using `time_this()` context manager over function wrappers for better readability
-3. **Be Selective with Events**: Log only important events to avoid cluttering the event log
-4. **Monitor Key Components**: Register components that are critical to your application's performance
-5. **Set Appropriate Thresholds**: Adjust memory and CPU thresholds based on your specific environment
-
-## Integration with Other WDBX Components
-
-The diagnostics module integrates seamlessly with other WDBX components:
-
-- **Storage Engine**: Monitor database operations and query performance
-- **Cache**: Track cache hit/miss ratios and cache size
-- **Network**: Monitor API requests and response times
-- **ML Models**: Track inference times and resource usage
-
-## Advanced Configuration
-
-For detailed control over the monitoring system, you can modify the following settings:
-
-```python
-from wdbx.utils.diagnostics import get_monitor
-
-monitor = get_monitor()
-
-# Adjust check interval dynamically
-monitor.check_interval = 10  # Check every 10 seconds
-
-# Change memory threshold
-monitor.threshold_memory_percent = 80.0  # Alert at 80% memory usage
-
-# Adjust history size
-monitor.max_history_points = 2000  # Store more history points
-```
+1. Enable appropriate logging levels
+2. Monitor resource usage regularly
+3. Set up automated health checks
+4. Review diagnostic reports
+5. Profile performance bottlenecks
 
 ## Troubleshooting
 
-If you encounter issues with the diagnostics module:
+### Common Issues
 
-1. **Check psutil Installation**: Make sure psutil is installed (`pip install psutil`)
-2. **Verify Thread Safety**: If you're using custom components, ensure they are thread-safe
-3. **Review Logs**: Check the application logs for any diagnostics-related errors
-4. **Memory Usage**: If memory usage is high, consider reducing `max_history_points` 
+1. High memory usage
+2. Slow vector operations
+3. Connection timeouts
+4. Plugin conflicts
+
+### Solutions
+
+1. Optimize batch sizes
+2. Enable caching
+3. Adjust timeouts
+4. Update plugins 

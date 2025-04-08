@@ -3,10 +3,11 @@
 Final fixes for discord_bot.py to resolve all indentation and duplicated code issues.
 """
 
+
 def fix_final_issues():
-    with open('wdbx_plugins/discord_bot.py', 'r', encoding='utf-8') as file:
+    with open("wdbx_plugins/discord_bot.py", encoding="utf-8") as file:
         content = file.read()
-    
+
     # Extract sections to fix
     start_section = """        # Wait for service to be fully started
         for _ in range(10):  # Wait up to 10 seconds
@@ -128,20 +129,25 @@ def fix_final_issues():
     content = content.replace(mac_install_section, fixed_mac_install_section)
 
     # Fix "def stop_service" section which may be broken
-    if 'return False\n        Stop the systemd service' in content:
-        content = content.replace('return False\n        Stop the systemd service', 
-                                'return False\n\n    def stop_service(self) -> bool:\n        """')
-    
+    if "return False\n        Stop the systemd service" in content:
+        content = content.replace(
+            "return False\n        Stop the systemd service",
+            'return False\n\n    def stop_service(self) -> bool:\n        """',
+        )
+
     # Fix "def uninstall" section which may be broken
-    if 'return False\n        Uninstall the systemd service' in content:
-        content = content.replace('return False\n        Uninstall the systemd service', 
-                                'return False\n\n    def uninstall(self) -> bool:\n        """')
+    if "return False\n        Uninstall the systemd service" in content:
+        content = content.replace(
+            "return False\n        Uninstall the systemd service",
+            'return False\n\n    def uninstall(self) -> bool:\n        """',
+        )
 
     # Write the fixed content back to the file
-    with open('wdbx_plugins/discord_bot.py', 'w', encoding='utf-8') as file:
+    with open("wdbx_plugins/discord_bot.py", "w", encoding="utf-8") as file:
         file.write(content)
-    
+
     print("Applied final fixes to discord_bot.py")
 
+
 if __name__ == "__main__":
-    fix_final_issues() 
+    fix_final_issues()

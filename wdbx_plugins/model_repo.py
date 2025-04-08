@@ -9,7 +9,13 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
+
+# Constants for magic numbers
+DEFAULT_MODEL_RETRY_COUNT = 3
+DEFAULT_MODEL_RETRY_DELAY = 2
+HEALTH_THRESHOLD_GOOD = 80
+HEALTH_THRESHOLD_WARN = 50
 
 logger = logging.getLogger("WDBX.plugins.model_repo")
 
@@ -51,7 +57,8 @@ def register_commands(plugin_registry: Dict[str, Callable]) -> None:
     plugin_registry["model"] = cmd_model_help
 
     logger.info(
-        "Model repository commands registered: model:list, model:add, model:remove, model:default, model:embed, model:generate, model:config, model:health"
+        "Model repository commands registered: model:list, model:add, model:remove, "
+        "model:default, model:embed, model:generate, model:config, model:health"
     )
 
     # Load config if exists
@@ -78,8 +85,6 @@ def _discover_plugin_sources(plugin_registry: Dict[str, Callable]) -> None:
     Args:
         plugin_registry: Plugin command registry
     """
-    global plugin_sources
-
     # Look for known plugin prefixes in the registry
     for command in plugin_registry:
         if command.startswith("openai:"):
@@ -747,7 +752,7 @@ def cmd_model_health(db, args: str) -> None:
                 print(f"  No {current_type} models registered")
             continue
 
-        for source_model, details in model_registry[current_type].items():
+        for source_model, _details in model_registry[current_type].items():
             total_models += 1
             source, model_name = source_model.split(":", 1)
 
@@ -809,8 +814,8 @@ def cmd_model_health(db, args: str) -> None:
         health_percentage = (healthy_models / total_models) * 100
         health_color = (
             "\033[1;32m"
-            if health_percentage > 80
-            else "\033[1;33m" if health_percentage > 50 else "\033[1;31m"
+            if health_percentage > HEALTH_THRESHOLD_GOOD
+            else "\033[1;33m" if health_percentage > HEALTH_THRESHOLD_WARN else "\033[1;31m"
         )
         print(f"  Overall health: {health_color}{health_percentage:.1f}%\033[0m")
 

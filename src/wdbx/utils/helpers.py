@@ -4,6 +4,7 @@ Helper functions for the WDBX package.
 This module contains common utility functions that are
 used throughout the WDBX package.
 """
+
 import json
 import logging
 from datetime import datetime
@@ -91,7 +92,7 @@ def safe_json_save(data: Any, path: Union[str, Path], indent: int = 2) -> bool:
         path_obj = Path(path)
         # Create directory if it doesn't exist
         path_obj.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(path_obj, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=indent)
         return True
@@ -123,8 +124,8 @@ def chunked_list(items: List[Any], chunk_size: int) -> List[List[Any]]:
     """
     if chunk_size < 1:
         raise ValueError("Chunk size must be at least 1")
-    
-    return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def bytes_to_human_readable(size_bytes: int) -> str:
@@ -139,13 +140,13 @@ def bytes_to_human_readable(size_bytes: int) -> str:
     """
     if size_bytes < 0:
         raise ValueError("Size must be non-negative")
-    
+
     units = ["B", "KB", "MB", "GB", "TB", "PB"]
     size = float(size_bytes)
     unit_index = 0
-    
+
     while size >= 1024.0 and unit_index < len(units) - 1:
         size /= 1024.0
         unit_index += 1
-    
+
     return f"{size:.2f} {units[unit_index]}"

@@ -1,42 +1,72 @@
 repos:
--   repo: https://github.com/astral-sh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.3
     hooks:
-    -   id: ruff
+      - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
--   repo: https://github.com/psf/black
+  - repo: https://github.com/psf/black
     rev: 23.10.0
     hooks:
-    -   id: black
--   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+      - id: black
+  - repo: local
     hooks:
-    -   id: isort
-        args: [--profile, black]
--   repo: local
-    hooks:
-    -   id: pylint
+      - id: pylint
         name: pylint
         entry: pylint
         language: system
         types: [python]
         args: [
-          "-rn", # Only display messages
-          "-sn", # Don't display the score
-        ]
--   repo: https://github.com/pre-commit/pre-commit-hooks
+            "-rn", # Only display messages
+            "-sn", # Don't display the score
+          ]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
-    -   id: check-json
-    -   id: check-toml
-    -   id: debug-statements
-    -   id: check-ast
--   repo: https://github.com/pre-commit/pygrep-hooks
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: debug-statements
+        language_version: python3
+  - repo: https://github.com/pre-commit/pygrep-hooks
     rev: v1.10.0
     hooks:
-    -   id: python-check-blanket-noqa
-    -   id: python-no-eval
-    -   id: python-use-type-annotations 
+      - id: python-check-blanket-noqa
+      - id: python-no-eval
+      - id: python-use-type-annotations
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.4.1
+    hooks:
+      - id: mypy
+        language_version: python3
+        additional_dependencies: [
+            types-requests,
+            types-setuptools,
+            numpy, # Add numpy for mypy_plugin support
+          ]
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.32.2
+    hooks:
+      - id: markdownlint
+        files: ^docs/.*\.md$
+  - repo: https://github.com/errata-ai/vale
+    rev: v2.20.0
+    hooks:
+      - id: vale
+        files: ^docs/.*\.(md|rst)$
+  - repo: https://github.com/sphinx-doc/sphinx
+    rev: v7.1.2
+    hooks:
+      - id: sphinx-build
+        name: sphinx-linkcheck
+        entry: sphinx-build -b linkcheck docs/ docs/_build/linkcheck
+        language: system
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: check-metadata
+        name: Check documentation metadata
+        entry: python docs/tools/check_metadata.py
+        language: python
+        files: ^docs/.*\.md$
+        additional_dependencies: [pyyaml]

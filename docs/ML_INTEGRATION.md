@@ -1,3 +1,304 @@
+# Machine Learning Integration
+
+<!-- category: Development -->
+<!-- priority: 75 -->
+<!-- tags: machine learning, ml, integration, ai -->
+
+This guide explains how to integrate machine learning models with WDBX.
+
+## Overview
+
+WDBX supports integration with various ML frameworks:
+
+- PyTorch
+- TensorFlow
+- Hugging Face
+- Ollama
+- LMStudio
+
+## Model Integration
+
+### PyTorch Models
+
+```python
+from wdbx.ml import TorchModelWrapper
+
+class MyModel(TorchModelWrapper):
+    def __init__(self):
+        super().__init__()
+        self.model = load_torch_model()
+    
+    def encode(self, text):
+        return self.model.encode(text)
+```
+
+### TensorFlow Models
+
+```python
+from wdbx.ml import TFModelWrapper
+
+class MyTFModel(TFModelWrapper):
+    def __init__(self):
+        super().__init__()
+        self.model = load_tf_model()
+    
+    def encode(self, text):
+        return self.model(text)
+```
+
+## Model Management
+
+### Model Registry
+
+```python
+from wdbx.ml import ModelRegistry
+
+# Register model
+registry = ModelRegistry()
+registry.register("my_model", MyModel())
+
+# Use model
+model = registry.get("my_model")
+vectors = model.encode(texts)
+```
+
+### Model Versioning
+
+```python
+# Register versioned model
+registry.register("my_model", MyModel(), version="1.0.0")
+
+# Get specific version
+model_v1 = registry.get("my_model", version="1.0.0")
+```
+
+## Batch Processing
+
+### Vector Generation
+
+```python
+from wdbx.ml import batch_process
+
+# Process in batches
+vectors = batch_process(
+    texts,
+    model,
+    batch_size=32,
+    max_length=512
+)
+```
+
+### Parallel Processing
+
+```python
+from wdbx.ml import parallel_process
+
+# Process in parallel
+vectors = parallel_process(
+    texts,
+    model,
+    num_workers=4
+)
+```
+
+## Model Optimization
+
+### Quantization
+
+```python
+from wdbx.ml import quantize_model
+
+# Quantize model
+quantized = quantize_model(
+    model,
+    quantization="int8"
+)
+```
+
+### Pruning
+
+```python
+from wdbx.ml import prune_model
+
+# Prune model
+pruned = prune_model(
+    model,
+    target_sparsity=0.5
+)
+```
+
+## Model Serving
+
+### REST API
+
+```python
+from wdbx.ml import ModelServer
+
+# Create server
+server = ModelServer(model)
+
+# Start server
+server.serve(port=8000)
+```
+
+### gRPC Service
+
+```python
+from wdbx.ml import ModelService
+
+# Create service
+service = ModelService(model)
+
+# Start service
+service.serve(port=50051)
+```
+
+## Performance
+
+### Caching
+
+```python
+from wdbx.ml import cache_embeddings
+
+# Enable caching
+cache_embeddings(
+    model,
+    cache_size=10000
+)
+```
+
+### GPU Acceleration
+
+```python
+from wdbx.ml import gpu_accelerate
+
+# Enable GPU
+gpu_accelerate(model, device="cuda:0")
+```
+
+## Monitoring
+
+### Model Metrics
+
+```python
+from wdbx.ml import ModelMetrics
+
+# Track metrics
+metrics = ModelMetrics(model)
+metrics.track_latency()
+metrics.track_memory()
+```
+
+### Model Logging
+
+```python
+from wdbx.ml import ModelLogger
+
+# Log model events
+logger = ModelLogger(model)
+logger.log_predictions()
+logger.log_errors()
+```
+
+## Best Practices
+
+1. Use appropriate batch sizes
+2. Enable caching for repeated inputs
+3. Monitor resource usage
+4. Version models properly
+5. Implement error handling
+
+## Error Handling
+
+### Model Errors
+
+```python
+from wdbx.ml import ModelError
+
+try:
+    vectors = model.encode(texts)
+except ModelError as e:
+    handle_model_error(e)
+```
+
+### Input Validation
+
+```python
+from wdbx.ml import validate_input
+
+# Validate before processing
+errors = validate_input(texts, model)
+if not errors:
+    process_texts(texts)
+```
+
+## Configuration
+
+### Model Config
+
+```python
+from wdbx.ml import ModelConfig
+
+config = ModelConfig(
+    batch_size=32,
+    max_length=512,
+    device="cuda",
+    precision="fp16"
+)
+```
+
+### Runtime Config
+
+```python
+from wdbx.ml import RuntimeConfig
+
+runtime = RuntimeConfig(
+    num_threads=4,
+    memory_limit="4G",
+    timeout=30
+)
+```
+
+## Integration Examples
+
+### Hugging Face
+
+```python
+from wdbx.ml.integrations import HFModel
+
+model = HFModel("sentence-transformers/all-mpnet-base-v2")
+vectors = model.encode(texts)
+```
+
+### Ollama
+
+```python
+from wdbx.ml.integrations import OllamaModel
+
+model = OllamaModel("llama2")
+response = model.generate(prompt)
+```
+
+## Testing
+
+### Model Testing
+
+```python
+from wdbx.ml.testing import ModelTester
+
+tester = ModelTester(model)
+results = tester.run_tests()
+```
+
+### Performance Testing
+
+```python
+from wdbx.ml.testing import PerformanceTester
+
+perf = PerformanceTester(model)
+metrics = perf.benchmark()
+```
+
 # WDBX ML Integration: Summary and Recommendations
 
 ## Overview

@@ -3,22 +3,23 @@
 Fix the cmd_scrape_status function to resolve unterminated string issues
 """
 
+
 def fix_cmd_scrape_status():
-    with open('wdbx_plugins/web_scraper.py', 'r', encoding='utf-8') as file:
+    with open("wdbx_plugins/web_scraper.py", encoding="utf-8") as file:
         content = file.read()
-    
+
     # Find the start of the cmd_scrape_status function
     start_idx = content.find("def cmd_scrape_status(db: Any, args: str) -> None:")
     if start_idx == -1:
         print("Could not find cmd_scrape_status function")
         return
-    
+
     # Find the end of the function (next function definition)
     end_idx = content.find("def cmd_scrape_search", start_idx)
     if end_idx == -1:
         print("Could not find end of cmd_scrape_status function")
         return
-    
+
     # Replace the function with a fixed version
     fixed_function = """def cmd_scrape_status(db: Any, args: str) -> None:
     \"\"\"
@@ -110,13 +111,14 @@ def fix_cmd_scrape_status():
         for domain, count in sorted(domains.items(), key=lambda x: x[1], reverse=True)[:5]:
             print(f"    {domain}: {count} links")
 """
-    
+
     new_content = content[:start_idx] + fixed_function + content[end_idx:]
-    
-    with open('wdbx_plugins/web_scraper.py', 'w', encoding='utf-8') as file:
+
+    with open("wdbx_plugins/web_scraper.py", "w", encoding="utf-8") as file:
         file.write(new_content)
-    
+
     print("Fixed cmd_scrape_status function with unterminated strings")
 
+
 if __name__ == "__main__":
-    fix_cmd_scrape_status() 
+    fix_cmd_scrape_status()

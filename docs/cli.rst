@@ -1,378 +1,328 @@
-=======================
 Command Line Interface
-=======================
+====================
 
-WDBX provides a comprehensive command-line interface (CLI) for interacting with the system directly from your terminal. This interface allows you to initialize databases, create vectors and blocks, perform searches, and manage your data without writing any code.
+The WDBX CLI provides a command-line interface for managing the WDBX server and performing operations.
+
+Basic Commands
+-------------
+
+Start the server:
+
+.. code-block:: bash
+
+    wdbx server start
+
+Create a vector:
+
+.. code-block:: bash
+
+    wdbx vector create --id my_vector --data "[1.0, 2.0, 3.0]"
+
+Search for vectors:
+
+.. code-block:: bash
+
+    wdbx vector search --query "[1.0, 2.0, 3.0]" --top-k 5
+
+Server Management
+----------------
+
+Manage the WDBX server:
+
+.. code-block:: bash
+
+    # Start server
+    wdbx server start
+
+    # Stop server
+    wdbx server stop
+
+    # Check status
+    wdbx server status
+
+    # View logs
+    wdbx server logs
+
+Vector Operations
+----------------
+
+Work with vectors:
+
+.. code-block:: bash
+
+    # Create vector
+    wdbx vector create --id my_vector --data "[1.0, 2.0, 3.0]"
+
+    # Get vector
+    wdbx vector get --id my_vector
+
+    # Update vector
+    wdbx vector update --id my_vector --data "[4.0, 5.0, 6.0]"
+
+    # Delete vector
+    wdbx vector delete --id my_vector
+
+    # Search vectors
+    wdbx vector search --query "[1.0, 2.0, 3.0]" --top-k 5
+
+Block Operations
+---------------
+
+Work with blocks:
+
+.. code-block:: bash
+
+    # Create block
+    wdbx block create --id my_block --vectors "[1.0, 2.0, 3.0]" "[4.0, 5.0, 6.0]"
+
+    # Get block
+    wdbx block get --id my_block
+
+    # Update block
+    wdbx block update --id my_block --vectors "[7.0, 8.0, 9.0]" "[10.0, 11.0, 12.0]"
+
+    # Delete block
+    wdbx block delete --id my_block
+
+    # Search blocks
+    wdbx block search --query "[1.0, 2.0, 3.0]" --top-k 5
+
+Configuration
+------------
+
+Configure the CLI:
+
+.. code-block:: bash
+
+    # Set default host
+    wdbx config set host localhost
+
+    # Set default port
+    wdbx config set port 8000
+
+    # View current config
+    wdbx config show
+
+    # Reset config
+    wdbx config reset
 
 Installation
 -----------
 
-The WDBX CLI is automatically installed when you install the WDBX package:
+Install the WDBX CLI using pip:
 
 .. code-block:: bash
 
-   pip install wdbx
-
-Basic Usage
------------
-
-Once installed, you can use the ``wdbx`` command to interact with WDBX:
-
-.. code-block:: bash
-
-   wdbx --help
+    pip install wdbx-cli
 
 Global Options
 -------------
 
-The following options apply to all commands:
+Common options available for all commands:
 
-- ``--version``: Show version information
-- ``--data-dir PATH``: Data directory location
-- ``--vector-dimension N``: Vector dimension (default: 1536)
-- ``--log-level LEVEL``: Logging level (debug, info, warning, error, critical)
-- ``--config PATH``: Path to configuration file
+.. code-block:: bash
 
-Commands
---------
-
-The CLI provides the following commands:
+    --host TEXT     Server hostname (default: localhost)
+    --port INTEGER  Server port (default: 8080)
+    --verbose      Enable verbose output
+    --quiet       Suppress all output except errors
+    --config FILE  Path to config file
 
 Initialization and Configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Commands for setting up and configuring WDBX:
 
 .. code-block:: bash
 
-   # Initialize a new WDBX database
-   wdbx init --data-dir ./mydata
-
-   # Initialize with force overwrite
-   wdbx init --data-dir ./mydata --force
-
-Vector Operations
-~~~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   # Create a vector
-   wdbx create-vector --data "[0.1, 0.2, 0.3, 0.4]" --metadata '{"description": "Test vector"}'
-
-   # Create and save a vector with specific ID
-   wdbx create-vector --data "[0.1, 0.2, 0.3, 0.4]" --id "my-vector-1" --save
-
-   # Search for similar vectors
-   wdbx search --query-id "my-vector-1" --top-k 5
-
-   # Search using vector data
-   wdbx search --query-data "[0.1, 0.2, 0.3, 0.4]" --top-k 10 --threshold 0.5
-
-Block Operations
-~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   # Create a block
-   wdbx create-block --data '{"name": "Test Block", "description": "This is a test"}' --vectors '["vector-id-1", "vector-id-2"]'
-
-   # Search for relevant blocks
-   wdbx search-blocks --query-id "my-vector-1" --top-k 5
-
-   # Search blocks using text
-   wdbx search-blocks --query-text "test query" --top-k 5
+    wdbx init             Initialize a new WDBX instance
+    wdbx config set       Set configuration options
+    wdbx config show      Display current configuration
 
 Data Management
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~
+
+Commands for managing data:
 
 .. code-block:: bash
 
-   # Get a vector by ID
-   wdbx get --id "my-vector-1" --type vector
-
-   # Get a block by ID
-   wdbx get --id "my-block-1" --type block
-
-   # Export data
-   wdbx export --output-dir ./export-data
-
-   # Import data
-   wdbx import --input-dir ./export-data
-
-   # Show statistics
-   wdbx stats
-
-   # Clear in-memory data
-   wdbx clear
-
-   # Optimize memory usage
-   wdbx optimize
-
-Server Operations
-~~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   # Start the WDBX server
-   wdbx server --host 127.0.0.1 --port 8000 --workers 4
+    wdbx export           Export data to file
+    wdbx import           Import data from file
+    wdbx backup           Create a backup
+    wdbx restore          Restore from backup
 
 Command Details
---------------
+-------------
 
-init
-~~~~
-
-Initialize a new WDBX database.
-
-.. code-block:: bash
-
-   wdbx init --data-dir PATH [--force]
-
-Options:
-  - ``--data-dir PATH``: Data directory location (required)
-  - ``--force``: Force initialization even if data directory exists
+Detailed documentation for each command.
 
 create-vector
 ~~~~~~~~~~~~
 
-Create a new embedding vector.
+Create a new vector in the database:
 
 .. code-block:: bash
 
-   wdbx create-vector --data JSON_ARRAY [--metadata JSON_OBJECT] [--id ID] [--save]
-
-Options:
-  - ``--data JSON_ARRAY``: Vector data as JSON array (required)
-  - ``--metadata JSON_OBJECT``: Vector metadata as JSON object
-  - ``--id ID``: Vector ID (generated if not provided)
-  - ``--save``: Save the vector to disk
+    wdbx vector create --dimension 3 --values "1.0,2.0,3.0"
 
 create-block
 ~~~~~~~~~~~
 
-Create a new data block.
+Create a new block from existing vectors:
 
 .. code-block:: bash
 
-   wdbx create-block --data JSON_OBJECT [--vectors JSON_ARRAY] [--id ID] [--save]
-
-Options:
-  - ``--data JSON_OBJECT``: Block data as JSON object (required)
-  - ``--vectors JSON_ARRAY``: List of vector IDs to include in the block
-  - ``--id ID``: Block ID (generated if not provided)
-  - ``--save``: Save the block to disk
+    wdbx block create --vectors "id1,id2,id3"
 
 search
-~~~~~
+~~~~~~
 
-Search for similar vectors.
+Search for similar vectors:
 
 .. code-block:: bash
 
-   wdbx search (--query-id ID | --query-data JSON_ARRAY) [--top-k N] [--threshold FLOAT] [--output-format FORMAT]
-
-Options:
-  - ``--query-id ID``: ID of the query vector
-  - ``--query-data JSON_ARRAY``: Query vector data as JSON array
-  - ``--top-k N``: Number of results to return (default: 10)
-  - ``--threshold FLOAT``: Minimum similarity threshold (default: 0.0)
-  - ``--output-format FORMAT``: Output format (text or json, default: text)
+    wdbx vector search --query "1.0,2.0,3.0" --k 10
 
 search-blocks
-~~~~~~~~~~~
+~~~~~~~~~~~~
 
-Search for relevant blocks.
-
-.. code-block:: bash
-
-   wdbx search-blocks (--query-id ID | --query-data JSON_ARRAY | --query-text TEXT) [--top-k N] [--threshold FLOAT] [--output-format FORMAT]
-
-Options:
-  - ``--query-id ID``: ID of the query vector
-  - ``--query-data JSON_ARRAY``: Query vector data as JSON array
-  - ``--query-text TEXT``: Query text
-  - ``--top-k N``: Number of results to return (default: 10)
-  - ``--threshold FLOAT``: Minimum similarity threshold (default: 0.0)
-  - ``--output-format FORMAT``: Output format (text or json, default: text)
-
-get
-~~~
-
-Get a vector or block by ID.
+Search within specific blocks:
 
 .. code-block:: bash
 
-   wdbx get --id ID --type TYPE [--output-format FORMAT]
-
-Options:
-  - ``--id ID``: ID of the vector or block (required)
-  - ``--type TYPE``: Type of object to get (vector or block, required)
-  - ``--output-format FORMAT``: Output format (text or json, default: text)
+    wdbx block search --block-id "block1" --query "1.0,2.0,3.0"
 
 export
-~~~~~
+~~~~~~
 
-Export data to a directory.
+Export data to a file:
 
 .. code-block:: bash
 
-   wdbx export --output-dir PATH [--format FORMAT]
-
-Options:
-  - ``--output-dir PATH``: Output directory (required)
-  - ``--format FORMAT``: Export format (json or binary, default: json)
+    wdbx export --output "backup.wdbx"
 
 import
-~~~~~
+~~~~~~
 
-Import data from a directory.
+Import data from a file:
 
 .. code-block:: bash
 
-   wdbx import --input-dir PATH [--format FORMAT]
-
-Options:
-  - ``--input-dir PATH``: Input directory (required)
-  - ``--format FORMAT``: Import format (json or binary, default: json)
+    wdbx import --input "backup.wdbx"
 
 stats
-~~~~
-
-Show statistics.
-
-.. code-block:: bash
-
-   wdbx stats [--output-format FORMAT]
-
-Options:
-  - ``--output-format FORMAT``: Output format (text or json, default: text)
-
-clear
-~~~~
-
-Clear all in-memory data.
-
-.. code-block:: bash
-
-   wdbx clear [--confirm]
-
-Options:
-  - ``--confirm``: Confirm clearing data without prompting
-
-optimize
-~~~~~~~
-
-Optimize memory usage.
-
-.. code-block:: bash
-
-   wdbx optimize
-
-server
 ~~~~~
 
-Start the WDBX server.
+Display database statistics:
 
 .. code-block:: bash
 
-   wdbx server [--host HOST] [--port PORT] [--workers N]
+    wdbx stats --detailed
 
-Options:
-  - ``--host HOST``: Server host (default: 127.0.0.1)
-  - ``--port PORT``: Server port (default: 8000)
-  - ``--workers N``: Number of worker processes (default: 1)
+clear
+~~~~~
+
+Clear database or cache:
+
+.. code-block:: bash
+
+    wdbx clear --cache
+    wdbx clear --all
+
+optimize
+~~~~~~~~
+
+Optimize database performance:
+
+.. code-block:: bash
+
+    wdbx optimize --full
+
+server
+~~~~~~
+
+Manage the WDBX server:
+
+.. code-block:: bash
+
+    wdbx server start --host localhost --port 8080
+    wdbx server stop
+    wdbx server status
 
 Examples
 --------
 
 Creating and Searching Vectors
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-   # Create a vector
-   wdbx create-vector --data "[0.1, 0.2, 0.3, 0.4]" --metadata '{"description": "Test vector"}' --save
-
-   # Create another vector
-   wdbx create-vector --data "[0.15, 0.25, 0.35, 0.45]" --metadata '{"description": "Similar vector"}' --save
-
-   # Search for similar vectors
-   wdbx search --query-data "[0.1, 0.2, 0.3, 0.4]" --top-k 5
+    # Create a vector
+    wdbx vector create --dimension 3 --values "1.0,2.0,3.0"
+    
+    # Search for similar vectors
+    wdbx vector search --query "1.0,2.0,3.0" --k 10
 
 Working with Blocks
 ~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-   # Create vectors
-   wdbx create-vector --data "[0.1, 0.2, 0.3, 0.4]" --id "vec1" --save
-   wdbx create-vector --data "[0.5, 0.6, 0.7, 0.8]" --id "vec2" --save
-
-   # Create a block with these vectors
-   wdbx create-block --data '{"name": "Test Block", "content": "This is a test block"}' --vectors '["vec1", "vec2"]' --save
-
-   # Search for blocks
-   wdbx search-blocks --query-text "test block" --top-k 5
+    # Create a block
+    wdbx block create --vectors "id1,id2,id3"
+    
+    # Search within the block
+    wdbx block search --block-id "block1" --query "1.0,2.0,3.0"
 
 Exporting and Importing Data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-   # Create some data
-   wdbx create-vector --data "[0.1, 0.2, 0.3, 0.4]" --id "vec1" --save
-   wdbx create-vector --data "[0.5, 0.6, 0.7, 0.8]" --id "vec2" --save
-   wdbx create-block --data '{"name": "Test Block"}' --vectors '["vec1", "vec2"]' --save
-
-   # Export data
-   wdbx export --output-dir ./backup
-
-   # Clear data
-   wdbx clear --confirm
-
-   # Import data
-   wdbx import --input-dir ./backup
+    # Export data
+    wdbx export --output "backup.wdbx"
+    
+    # Import data
+    wdbx import --input "backup.wdbx"
 
 Running the Server
 ~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-   # Start the server
-   wdbx server --host 0.0.0.0 --port 8080 --workers 2
+    # Start the server
+    wdbx server start --host localhost --port 8080
 
 Integrating with Shell Scripts
 ----------------------------
 
-The CLI can be easily integrated into shell scripts for automation:
+Example shell script using WDBX CLI:
 
 .. code-block:: bash
 
-   #!/bin/bash
-   
-   # Initialize database
-   wdbx init --data-dir ./mydata --force
-   
-   # Create vectors
-   for i in {1..10}; do
-     # Generate random vector data
-     vector_data="["
-     for j in {1..4}; do
-       vector_data+="$(echo "scale=2; $RANDOM/32767" | bc),"
-     done
-     vector_data="${vector_data%,}]"
-     
-     # Create vector
-     wdbx create-vector --data "$vector_data" --metadata "{\"index\": $i}" --save
-   done
-   
-   # Show statistics
-   wdbx stats
-   
-   echo "Completed vector creation"
+    #!/bin/bash
+    
+    # Start the server
+    wdbx server start
+    
+    # Create vectors
+    wdbx vector create --dimension 3 --values "1.0,2.0,3.0"
+    wdbx vector create --dimension 3 --values "4.0,5.0,6.0"
+    
+    # Search for vectors
+    wdbx vector search --query "1.0,2.0,3.0" --k 5
+    
+    # Stop the server
+    wdbx server stop
 
 Exit Codes
 ---------
 
-The CLI returns the following exit codes:
+The CLI uses the following exit codes:
 
-- ``0``: Success
-- ``1``: Error (with error message) 
+* 0: Success
+* 1: General error
+* 2: Configuration error
+* 3: Connection error
+* 4: Invalid input
+* 5: Server error 

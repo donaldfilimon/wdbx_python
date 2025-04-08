@@ -10,7 +10,23 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Optional
+
+# Constants for magic numbers
+MAX_VECTORS_FULL_LEGEND = 10
+MAX_VECTORS_SMALL_LEGEND = 20
+MIN_VECTORS_FOR_SIMILARITY = 2
+MIN_VECTORS_FOR_PCA = 2
+MIN_VECTORS_FOR_TSNE = 2
+SHORT_ID_DISPLAY_LENGTH = 8
+MAX_ID_DISPLAY_LENGTH_BEFORE_TRUNC = 10
+PCA_N_COMPONENTS = 2
+TSNE_N_COMPONENTS = 2
+TSNE_DEFAULT_ITER = 250
+TSNE_DEFAULT_PERPLEXITY_LOW = 2
+TSNE_DEFAULT_PERPLEXITY_HIGH = 5 # Used for > 10 vectors
+TSNE_PERPLEXITY_THRESHOLD = 10 # Num vectors threshold for perplexity calc
+RANDOM_STATE_SEED = 42
 
 logger = logging.getLogger("WDBX.plugins.visualization")
 
@@ -76,7 +92,7 @@ vis_config = {
 }
 
 
-def register_commands(plugin_registry: Dict[str, Callable]) -> None:
+def register_commands(plugin_registry: dict[str, Callable]) -> None:
     """
     Register visualization commands with the CLI.
 
@@ -159,7 +175,7 @@ def _print_vis_config():
         print(f"  \033[1m{key}\033[0m = {value}")
 
 
-def _validate_numeric_value(key: str, value: str) -> Tuple[bool, int, str]:
+def _validate_numeric_value(key: str, value: str) -> tuple[bool, int, str]:
     """Validate and convert a numeric configuration value.
 
     Args:
@@ -327,7 +343,7 @@ def _try_get_vector_by_method(db, vec_id: str, method_name: str) -> Optional[np.
         return None
 
 
-def get_actual_vectors(db, vector_ids: List[str]) -> List[np.ndarray]:
+def get_actual_vectors(db, vector_ids: list[str]) -> list[np.ndarray]:
     """
     Retrieve the actual vector arrays from vector IDs.
 
@@ -368,60 +384,72 @@ def get_actual_vectors(db, vector_ids: List[str]) -> List[np.ndarray]:
 
 
 def get_vectors_for_query(
-    db, query: str, max_vectors: int = 10
-) -> Tuple[List[str], List[np.ndarray]]:
+    db, query: str, max_vectors: int = None
+) -> tuple[list[str], list[np.ndarray]]:
     """
-    Search for vectors matching a query and return the actual vectors.
+    Get vectors for a search query.
 
     Args:
-        db: WDBX instance
-        query: Search query
-        max_vectors: Maximum number of vectors to return
+        db: Database instance
+        query: Query string
+        max_vectors: Maximum number of vectors to return (if None, uses vis_config["max_vectors"])
 
     Returns:
-        Tuple of (list of vector IDs, list of vector arrays)
+        Tuple of (vector_ids, vectors)
     """
-    # Use configured max_vectors unless overridden
-    limit = max_vectors if max_vectors > 0 else vis_config["max_vectors"]
+    if not HAVE_NUMPY:
+        print("\033[1;31mError: NumPy not available. Cannot get vectors.\033[0m")
+        print("Install with: pip install numpy")
+        return [], []
+
+    if max_vectors is None:
+        max_vectors = vis_config.get("max_vectors", DEFAULT_MAX_VECTORS)
+
+    logger.info(f"Searching for vectors matching query: '{query}' (limit: {max_vectors})")
 
     try:
-        logger.info(f"Searching for vectors matching query: '{query}' (limit: {limit})")
+        # First try to convert query to embedding (for similarity search)
+        query_embedding = db.create_embedding_from_text(query)
 
-        # We need the IDs to retrieve the actual vectors
-        # Example: Adapt based on actual db.search implementation
-        if hasattr(db, "search_with_scores"):
-            search_results = db.search_with_scores(query, k=limit)
-        elif hasattr(db, "search"):  # If search just returns IDs
-            # Need to handle this case differently, maybe assume score is 1?
-            # This part needs careful adaptation to the actual DB interface
-            search_results = [(vector_id, 1.0) for vector_id in db.search(query, k=limit)]
-        else:
-            logger.error("Database does not implement search or search_with_scores method")
-            print("\033[1;31mError: Database does not support vector search.\033[0m")
+        try:
+            # Try search_similar_vectors method first
+            if hasattr(db, "search_similar_vectors"):
+                results = db.search_similar_vectors(query_embedding, top_k=max_vectors)
+                vector_ids = [result[0] for result in results]
+            # Fall back to search method if available
+            elif hasattr(db, "search") or hasattr(db.vector_store, "search"):
+                search_method = getattr(db, "search", None) or db.vector_store.search
+                results = search_method(query_embedding, k=max_vectors)
+                vector_ids = [result[0] for result in results]
+            # Fall back to search_with_scores method if available
+            elif hasattr(db, "search_with_scores") or hasattr(
+                db.vector_store, "search_with_scores"
+            ):
+                search_method = getattr(db, "search_with_scores", None) or db.vector_store.search_with_scores
+                results = search_method(query_embedding, k=max_vectors)
+                vector_ids = [result[0] for result in results]
+            else:
+                logger.error("Database does not implement search or search_with_scores method")
+                print("\033[1;31mError: Database does not support vector search.\033[0m")
+                return [], []
+
+        except Exception as e:
+            logger.error(f"Error during vector search: {e}")
+            print(f"\033[1;31mError during vector search: {e}\033[0m")
             return [], []
-
-        if not search_results:
-            print(f"\033[1;33mNo vectors found matching: '{query}'\033[0m")
-            return [], []
-
-        # Extract vector IDs
-        vector_ids = [result[0] for result in search_results]
-        logger.debug(f"Found {len(vector_ids)} vectors matching the query")
-
-        # Get the actual vectors
-        vectors = get_actual_vectors(db, vector_ids)
-
-        if not vectors:
-            print("\033[1;31mError: Could not retrieve any vectors from search results.\033[0m")
-            return [], []
-
-        print(f"\033[1;32mFound {len(vectors)} vectors ({len(vectors[0])} dimensions).\033[0m")
-        return vector_ids, vectors
 
     except Exception as e:
-        logger.error(f"Error searching for vectors: {e}")
-        print(f"\033[1;31mError during vector search: {e}\033[0m")
+        logger.error(f"Error creating embedding from query: {e}")
+        print(f"\033[1;31mError creating embedding from query '{query}': {e}\033[0m")
         return [], []
+
+    # Get the actual vector embeddings
+    vectors = get_actual_vectors(db, vector_ids)
+
+    if not vectors:
+        print(f"No vectors found or error retrieving vectors for query '{query}'.")
+
+    return vector_ids, vectors
 
 
 def save_figure(fig, filename_prefix: str, title: str) -> str:
@@ -474,16 +502,22 @@ def cmd_plot(db, args: str) -> None:
 
     query = args
     print(f"\033[1;34mGenerating vector plot for query: '{query}'...\033[0m")
-    vector_ids, vectors = get_vectors_for_query(db, query, vis_config["max_vectors"])
+    vector_ids, vectors = get_vectors_for_query(
+        db, query, vis_config.get("max_vectors", DEFAULT_MAX_VECTORS)
+    )
 
     if not vectors:
         return
 
     try:
-
         # Create plot
-        fig, ax = plt.subplots(figsize=(vis_config["figure_width"], vis_config["figure_height"]))
-        color_map = plt.get_cmap(vis_config["color_scheme"])
+        fig, ax = plt.subplots(
+            figsize=(
+                vis_config.get("figure_width", DEFAULT_FIG_WIDTH),
+                vis_config.get("figure_height", DEFAULT_FIG_HEIGHT),
+            )
+        )
+        color_map = plt.get_cmap(vis_config.get("color_scheme", DEFAULT_COLOR_SCHEME))
 
         # Get dimensionality
         vec_dim = len(vectors[0])
@@ -495,9 +529,8 @@ def cmd_plot(db, args: str) -> None:
             color = color_map(i / len(vectors))
 
             # Generate label (truncate vector ID for readability)
-            label = (
-                f"Vec {i+1} ({vector_id[:8]}...)" if vis_config["truncate_labels"] else f"Vec {i+1}"
-            )
+            truncate_labels = vis_config.get("truncate_labels", True)
+            label = f"Vec {i+1} ({vector_id[:8]}...)" if truncate_labels else f"Vec {i+1}"
 
             # Plot the vector
             ax.plot(x_axis, vector, label=label, alpha=0.7, linewidth=2, color=color)
@@ -508,14 +541,19 @@ def cmd_plot(db, args: str) -> None:
         ax.set_ylabel("Value")
         ax.grid(True, linestyle="--", alpha=0.5)
 
-        # Add legend (if not too many vectors)
-        if len(vectors) <= 10:
+        # Add legend with smaller font size for many vectors
+        if len(vectors) > MAX_VECTORS_FULL_LEGEND:
+            ax.legend(fontsize="small", loc="best")
+        else:
             ax.legend(loc="best")
 
         # Save the figure
-        filepath = save_figure(fig, "plot", query)
-        if filepath:
-            print(f"\033[1;32mPlot saved to: {filepath}\033[0m")
+        output_path = save_figure(fig, "vector_plot", query)
+        if output_path:
+            print(f"\033[1;32mVector plot saved to: {output_path}\033[0m")
+
+        # Close the figure to free memory
+        plt.close(fig)
 
     except Exception as e:
         print(f"\033[1;31mError creating plot: {e}\033[0m")
@@ -588,8 +626,10 @@ def cmd_similarity_matrix(db, args: str) -> None:
     if not vectors:
         print(f"No vectors found or error retrieving vectors for query '{query}'.")
         return
-    if len(vectors) < 2:
-        print(f"Need at least 2 vectors to compute similarity matrix, found {len(vectors)}.\033[0m")
+    if len(vectors) < MIN_VECTORS_FOR_SIMILARITY:
+        print(
+            f"Need at least {MIN_VECTORS_FOR_SIMILARITY} vectors to compute similarity matrix, found {len(vectors)}.\033[0m"
+        )
         return
 
     fig = _generate_similarity_matrix(vector_ids, vectors, query)
@@ -631,8 +671,8 @@ def cmd_pca_visualization(db, args: str) -> None:
     if not vectors:
         print(f"No vectors found or error retrieving vectors for query '{query}'.")
         return
-    if len(vectors) < 2:
-        print(f"Need at least 2 vectors for PCA, found {len(vectors)}.\033[0m")
+    if len(vectors) < MIN_VECTORS_FOR_PCA:
+        print(f"Need at least {MIN_VECTORS_FOR_PCA} vectors for PCA, found {len(vectors)}.\033[0m")
         return
 
     fig = _generate_pca(vector_ids, vectors, query)
@@ -671,25 +711,105 @@ def cmd_tsne_visualization(db, args: str) -> None:
     print(
         f"\033[1;34mGenerating t-SNE visualization for query: '{query}'... (This may take a moment)\033[0m"
     )
-    vector_ids, vectors = get_vectors_for_query(db, query, vis_config["max_vectors"])
+    vector_ids, vectors = get_vectors_for_query(
+        db, query, vis_config.get("max_vectors", DEFAULT_MAX_VECTORS)
+    )
 
     if not vectors:
-        print(f"No vectors found or error retrieving vectors for query '{query}'.")
-        return
-    if len(vectors) < 2:
-        print(f"Need at least 2 vectors for t-SNE, found {len(vectors)}.\033[0m")
         return
 
-    fig = _generate_tsne(vector_ids, vectors, query)
-    if fig:
-        filepath = save_figure(fig, "tsne_plot", f"t-SNE Plot for '{query}'")
-        if filepath and not vis_config["show_plots"]:
-            print(f"t-SNE plot saved to: {filepath}")
-        elif vis_config["show_plots"]:
-            plt.show()
-        else:
-            print("\033[1;31mError saving t-SNE plot figure.\033[0m")
-    else:
+    if len(vectors) < MIN_VECTORS_FOR_TSNE:
+        print(
+            f"\033[1;33mNeed at least {MIN_VECTORS_FOR_TSNE} vectors for t-SNE visualization. Only got {len(vectors)}.\033[0m"
+        )
+        return
+
+    try:
+        # Import t-SNE here to avoid issues if not installed
+        from sklearn.manifold import TSNE
+
+        # Convert vectors to numpy array if needed
+        vectors_array = np.array(vectors)
+
+        # Apply t-SNE for dimensionality reduction
+        tsne = TSNE(
+            n_components=TSNE_N_COMPONENTS,
+            perplexity=min(TSNE_DEFAULT_PERPLEXITY_HIGH, len(vectors) - 1) if len(vectors) > TSNE_PERPLEXITY_THRESHOLD else TSNE_DEFAULT_PERPLEXITY_LOW,
+            n_iter=TSNE_DEFAULT_ITER,
+            random_state=RANDOM_STATE_SEED,
+        )
+
+        # Perform t-SNE
+        tsne_result = tsne.fit_transform(vectors_array)
+
+        # Create plot
+        fig, ax = plt.subplots(
+            figsize=(
+                vis_config.get("figure_width", DEFAULT_FIG_WIDTH),
+                vis_config.get("figure_height", DEFAULT_FIG_HEIGHT),
+            )
+        )
+
+        # Get colormap
+        try:
+            # Use newer API (matplotlib 3.7+)
+            colors = plt.colormaps[vis_config.get("color_scheme", DEFAULT_COLOR_SCHEME)]
+        except (KeyError, AttributeError):
+            # Fallback for older matplotlib versions
+            colors = plt.cm.get_cmap(
+                vis_config.get("color_scheme", DEFAULT_COLOR_SCHEME), len(vectors)
+            )
+
+        # Plot each vector as a point in 2D space
+        for i, (vector_id, point) in enumerate(zip(vector_ids, tsne_result)):
+            # Shorten ID for label
+            vec_id_str = str(vector_id)
+            short_id = (
+                f"{vec_id_str[:SHORT_ID_DISPLAY_LENGTH]}..."
+                if len(vec_id_str) > MAX_ID_DISPLAY_LENGTH_BEFORE_TRUNC
+                else vec_id_str
+            )
+
+            # Plot point
+            ax.scatter(
+                point[0],
+                point[1],
+                color=colors(i),
+                label=f"Vec {i+1} ({short_id})",
+                s=100,
+                alpha=0.7,
+            )
+
+            # Add labels to points if not too many
+            if len(vectors) <= MAX_VECTORS_SMALL_LEGEND:
+                ax.annotate(
+                    f"{i+1}",
+                    (point[0], point[1]),
+                    textcoords="offset points",
+                    xytext=(0, 5),
+                    ha="center",
+                )
+
+        # Customize plot
+        ax.set_title(f"t-SNE Visualization for: '{query}'")
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+        # Handle legend based on number of vectors
+        if len(vectors) <= MAX_VECTORS_FULL_LEGEND:
+            ax.legend(loc="best")
+        elif len(vectors) <= MAX_VECTORS_SMALL_LEGEND:
+            ax.legend(fontsize="small", loc="best")
+
+        # Save the figure
+        output_path = save_figure(fig, "tsne", query)
+        if output_path:
+            print(f"\033[1;32mt-SNE visualization saved to: {output_path}\033[0m")
+
+        # Close the figure to free memory
+        plt.close(fig)
+
+    except Exception as e:
+        print(f"\033[1;31mError performing t-SNE: {e}\033[0m")
         print("\033[1;31mFailed to generate t-SNE plot.\033[0m")
 
 
@@ -733,11 +853,11 @@ def cmd_vector_heatmap(db, args: str) -> None:
         print("\033[1;31mFailed to generate heatmap.\033[0m")
 
 
-def _setup_export_directory() -> Tuple[str, str, bool]:
+def _setup_export_directory() -> tuple[str, str, bool]:
     """Set up a directory for exporting multiple visualizations.
 
     Returns:
-        Tuple of (export_dir_path, original_output_dir, success)
+        tuple[str, str, bool]: export_dir, unique_id, directory_created
     """
     # Create timestamp for consistent filenames
     timestamp = int(time.time())
@@ -784,7 +904,7 @@ def _generate_all_advanced_visualizations(vector_ids, vectors, query: str) -> No
         vectors: List of vector arrays
         query: The search query
     """
-    if HAVE_SKLEARN and len(vectors) >= 2:
+    if HAVE_SKLEARN and len(vectors) >= MIN_VECTORS_FOR_PCA:
         print("\033[1;34mGenerating PCA visualization...\033[0m")
         _generate_pca(vector_ids, vectors, query)
 
@@ -792,8 +912,10 @@ def _generate_all_advanced_visualizations(vector_ids, vectors, query: str) -> No
         _generate_tsne(vector_ids, vectors, query)
     elif not HAVE_SKLEARN:
         print("\033[1;33mSkipping PCA and t-SNE (scikit-learn not available).\033[0m")
-    elif len(vectors) < 2:
-        print("\033[1;33mSkipping PCA and t-SNE (need at least 2 vectors).\033[0m")
+    elif len(vectors) < MIN_VECTORS_FOR_PCA:
+        print(
+            f"\033[1;33mSkipping PCA and t-SNE (need at least {MIN_VECTORS_FOR_PCA} vectors).\033[0m"
+        )
 
 
 def cmd_export_all_visualizations(db, args: str) -> None:
@@ -815,36 +937,23 @@ def cmd_export_all_visualizations(db, args: str) -> None:
     query = args
     print(f"\033[1;34mExporting all visualizations for query: '{query}'...\033[0m")
 
-    vector_ids, vectors = get_vectors_for_query(db, query, vis_config["max_vectors"])
+    # Instead of processing vectors directly, call the individual command functions
+    # These will handle their own vector retrieval and error conditions
 
-    if not vectors:
-        return
+    # Standard visualizations
+    cmd_plot(db, query)
+    cmd_histogram(db, query)
+    cmd_similarity_matrix(db, query)
+    cmd_vector_heatmap(db, query)
 
-    # Set up export directory
-    export_dir, original_dir, success = _setup_export_directory()
-    if not success:
-        print("\033[1;31mError creating export directory.\033[0m")
-        return
+    # Advanced visualizations that require scikit-learn
+    if HAVE_SKLEARN:
+        cmd_pca_visualization(db, query)
+        cmd_tsne_visualization(db, query)
+    else:
+        print("\033[1;33mSkipping PCA and t-SNE (scikit-learn not available).\033[0m")
 
-    # Set temporary output directory
-    vis_config["output_dir"] = export_dir
-
-    try:
-        # Generate standard visualizations
-        _generate_all_standard_visualizations(vector_ids, vectors, query)
-
-        # Generate advanced visualizations
-        _generate_all_advanced_visualizations(vector_ids, vectors, query)
-
-        print(f"\033[1;32mAll visualizations exported to: {export_dir}\033[0m")
-
-    except Exception as e:
-        print(f"\033[1;31mError during export: {e}\033[0m")
-        logger.error(f"Error in export_all_visualizations: {e}", exc_info=True)
-
-    finally:
-        # Restore original output dir
-        vis_config["output_dir"] = original_dir
+    print(f"\033[1;32mAll available visualizations exported to: {vis_config['output_dir']}\033[0m")
 
 
 def _generate_vector_plot(vector_ids, vectors, query):
@@ -889,7 +998,7 @@ def _generate_vector_plot(vector_ids, vectors, query):
         ax.set_ylabel("Component Value")
         ax.grid(True, linestyle=":", alpha=0.6)
         # Improve legend placement for potentially many vectors
-        if num_vectors <= 10:
+        if num_vectors <= MAX_VECTORS_FULL_LEGEND:
             ax.legend(loc="best")
         return fig
     except Exception as e:
@@ -944,8 +1053,10 @@ def _generate_similarity_matrix(vector_ids, vectors, query):
     if not HAVE_MATPLOTLIB or not HAVE_NUMPY:
         logger.error("Cannot generate similarity matrix: Missing matplotlib or numpy.")
         return None
-    if not vectors or len(vectors) < 2:
-        logger.error("Cannot generate similarity matrix: Need at least 2 vectors.")
+    if not vectors or len(vectors) < MIN_VECTORS_FOR_SIMILARITY:
+        logger.error(
+            f"Cannot generate similarity matrix: Need at least {MIN_VECTORS_FOR_SIMILARITY} vectors."
+        )
         return None
 
     try:
@@ -1052,14 +1163,14 @@ def _generate_heatmap(vector_ids, vectors, query):
 
 def _generate_pca(vector_ids, vectors, query):
     """Internal helper to generate a PCA visualization for export_all_visualizations."""
-    if not HAVE_SKLEARN or len(vectors) < 2:
+    if not HAVE_SKLEARN or len(vectors) < MIN_VECTORS_FOR_PCA:
         return None
 
     try:
         from sklearn.decomposition import PCA
 
         # Create PCA and transform vectors
-        pca = PCA(n_components=2)
+        pca = PCA(n_components=PCA_N_COMPONENTS)
         vectors_2d = pca.fit_transform(vectors)
 
         # Create scatter plot
@@ -1096,23 +1207,33 @@ def _generate_pca(vector_ids, vectors, query):
 
 def _generate_tsne(vector_ids, vectors, query):
     """Internal helper to generate a t-SNE visualization for export_all_visualizations."""
-    if not HAVE_SKLEARN or len(vectors) < 2:
+    if not HAVE_SKLEARN or len(vectors) < MIN_VECTORS_FOR_TSNE:
         return None
 
     try:
         from sklearn.manifold import TSNE
 
         # Create t-SNE and transform vectors
+        perplexity_val = (
+            min(TSNE_DEFAULT_PERPLEXITY_HIGH, len(vectors) - 1)
+            if len(vectors) > TSNE_PERPLEXITY_THRESHOLD
+            else TSNE_DEFAULT_PERPLEXITY_LOW
+        )
         tsne = TSNE(
-            n_components=2,
-            perplexity=min(5, len(vectors) - 1) if len(vectors) > 10 else 2,
-            n_iter=250,
-            random_state=42,
+            n_components=TSNE_N_COMPONENTS,
+            perplexity=perplexity_val,
+            n_iter=TSNE_DEFAULT_ITER,
+            random_state=RANDOM_STATE_SEED,
         )
         vectors_2d = tsne.fit_transform(vectors)
 
         # Create scatter plot
-        fig = plt.figure(figsize=(vis_config["figure_width"], vis_config["figure_height"]))
+        fig, ax = plt.subplots(
+            figsize=(
+                vis_config.get("figure_width", DEFAULT_FIG_WIDTH),
+                vis_config.get("figure_height", DEFAULT_FIG_HEIGHT),
+            )
+        )
         plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], alpha=0.7)
 
         # Add labels for points
@@ -1124,11 +1245,21 @@ def _generate_tsne(vector_ids, vectors, query):
         plt.ylabel("Component 2")
         plt.grid(True, linestyle="--", alpha=0.5)
 
+        # Handle legend based on number of vectors
+        if len(vectors) <= MAX_VECTORS_FULL_LEGEND:
+            ax.legend(loc="best")
+        elif len(vectors) <= MAX_VECTORS_SMALL_LEGEND:
+            ax.legend(fontsize="small", loc="best")
+
         # Save figure
-        filepath = save_figure(fig, "tsne", query)
-        if filepath:
-            print(f"\033[1;32mt-SNE visualization saved to: {filepath}\033[0m")
-        return filepath
+        output_path = save_figure(fig, "tsne", query)
+        if output_path:
+            print(f"\033[1;32mt-SNE visualization saved to: {output_path}\033[0m")
+
+        # Close the figure to free memory
+        plt.close(fig)
+
+        return output_path
     except Exception as e:
         print(f"\033[1;31mError performing t-SNE: {e}\033[0m")
         return None

@@ -5,10 +5,6 @@ This module provides functionality to integrate Swagger UI with the WDBX HTTP se
 making it easier to explore and test the API endpoints interactively.
 """
 
-import os
-import pathlib
-from typing import Dict, Optional, Union
-
 from aiohttp import web
 from aiohttp.web import Application, Request, Response
 
@@ -18,18 +14,18 @@ from .openapi import OpenAPIDocumentation
 async def swagger_ui_handler(request: Request) -> Response:
     """
     Handle requests for the Swagger UI page.
-    
+
     Args:
         request: HTTP request
-        
+
     Returns:
         HTTP response with Swagger UI HTML
     """
     # Get the base URL for the API
-    swagger_ui_path = request.app.get('swagger_ui_path', '/api/docs')
-    api_spec_path = request.app.get('api_spec_path', '/api/openapi.json')
-    api_version = request.app.get('api_version', 'v1')
-    
+    request.app.get("swagger_ui_path", "/api/docs")
+    api_spec_path = request.app.get("api_spec_path", "/api/openapi.json")
+    request.app.get("api_version", "v1")
+
     # Create Swagger UI HTML
     html = f"""
     <!DOCTYPE html>
@@ -99,48 +95,48 @@ async def swagger_ui_handler(request: Request) -> Response:
     </body>
     </html>
     """
-    
-    return web.Response(text=html, content_type='text/html')
+
+    return web.Response(text=html, content_type="text/html")
 
 
 async def openapi_json_handler(request: Request) -> Response:
     """
     Handle requests for the OpenAPI specification in JSON format.
-    
+
     Args:
         request: HTTP request
-        
+
     Returns:
         HTTP response with OpenAPI specification in JSON format
     """
-    api_documentation = request.app.get('api_documentation')
-    
+    api_documentation = request.app.get("api_documentation")
+
     if not api_documentation:
-        api_version = request.app.get('api_version', 'v1')
+        api_version = request.app.get("api_version", "v1")
         api_documentation = OpenAPIDocumentation(api_version=api_version)
-        request.app['api_documentation'] = api_documentation
-        
+        request.app["api_documentation"] = api_documentation
+
     return web.json_response(api_documentation.get_spec())
 
 
 async def openapi_yaml_handler(request: Request) -> Response:
     """
     Handle requests for the OpenAPI specification in YAML format.
-    
+
     Args:
         request: HTTP request
-        
+
     Returns:
         HTTP response with OpenAPI specification in YAML format
     """
-    api_documentation = request.app.get('api_documentation')
-    
+    api_documentation = request.app.get("api_documentation")
+
     if not api_documentation:
-        api_version = request.app.get('api_version', 'v1')
+        api_version = request.app.get("api_version", "v1")
         api_documentation = OpenAPIDocumentation(api_version=api_version)
-        request.app['api_documentation'] = api_documentation
-        
-    return web.Response(text=api_documentation.to_yaml(), content_type='text/yaml')
+        request.app["api_documentation"] = api_documentation
+
+    return web.Response(text=api_documentation.to_yaml(), content_type="text/yaml")
 
 
 def setup_swagger(
@@ -150,11 +146,11 @@ def setup_swagger(
     api_spec_json_path: str = "/api/openapi.json",
     api_spec_yaml_path: str = "/api/openapi.yaml",
     title: str = "WDBX API",
-    description: str = "API for the WDBX vector database and processing system"
+    description: str = "API for the WDBX vector database and processing system",
 ) -> None:
     """
     Set up Swagger UI for the AIOHTTP application.
-    
+
     Args:
         app: AIOHTTP application
         api_version: API version string
@@ -166,18 +162,16 @@ def setup_swagger(
     """
     # Create OpenAPI documentation
     api_documentation = OpenAPIDocumentation(
-        api_version=api_version,
-        title=title,
-        description=description
+        api_version=api_version, title=title, description=description
     )
-    
+
     # Store in application
-    app['api_documentation'] = api_documentation
-    app['api_version'] = api_version
-    app['swagger_ui_path'] = swagger_ui_path
-    app['api_spec_path'] = api_spec_json_path
-    
+    app["api_documentation"] = api_documentation
+    app["api_version"] = api_version
+    app["swagger_ui_path"] = swagger_ui_path
+    app["api_spec_path"] = api_spec_json_path
+
     # Add routes
     app.router.add_get(swagger_ui_path, swagger_ui_handler)
     app.router.add_get(api_spec_json_path, openapi_json_handler)
-    app.router.add_get(api_spec_yaml_path, openapi_yaml_handler) 
+    app.router.add_get(api_spec_yaml_path, openapi_yaml_handler)

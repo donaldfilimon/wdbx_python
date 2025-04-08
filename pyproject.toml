@@ -14,64 +14,75 @@ authors = [
 ]
 
 [tool.ruff]
-# Enable a selection of rules - the same as in our lint_config.py
-select = [
-    "E",    # pycodestyle errors
-    "F",    # pyflakes
-    "I",    # isort
-    "W",    # pycodestyle warnings
-    "N",    # pep8-naming
-    "UP",   # pyupgrade
-    "B",    # flake8-bugbear
-    "C4",   # flake8-comprehensions
-    "PLR",  # pylint refactor suggestions
-]
-ignore = ["E501"]  # Line length - we handle this with black
-
-# Line length is handled by black
 line-length = 100
-
-# Target Python version
 target-version = "py39"
 
 # Exclude files and directories
 exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
     ".git",
-    ".github",
-    "__pycache__",
-    "*.pyc",
-    "venv",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
     ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
     "build",
     "dist",
+    "node_modules",
+    "venv",
+    "*.pyc",
     "*.egg-info",
+    ".github",
+    "docs/_build",
+    "site",
+    ".pytest_cache",
+    ".vscode",
+    "data",
+    "logs",
+    "temp",
+    "cache",
+    "wdbx_data",
+    "wdbx_plugins/__pycache__",
+    "wdbx_model_cache",
+    "wdbx_visualizations",
+    "metrics",
 ]
 
-# Allow autofix for all enabled rules
-fixable = ["ALL"]
-unfixable = []
+# Enable flake8 rules by default
+select = ["E", "F", "I", "W", "B", "C4"]
+
+# Ignore line length and other rules handled by Black
+ignore = ["E501", "E203"]
 
 [tool.black]
 line-length = 100
 target-version = ['py39']
-include = '\.pyi?$'
+include = '\\.pyi?$'
 exclude = '''
 /(
-    \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
+    \\.git
+  | \\.hg
+  | \\.mypy_cache
+  | \\.tox
+  | \\.venv
+  | \\.env
   | _build
   | buck-out
   | build
   | dist
+  | venv
+  | __pycache__
+  | node_modules
 )/
 '''
-
-[tool.isort]
-profile = "black"
-line_length = 100
 
 [tool.mypy]
 python_version = "3.9"
@@ -79,8 +90,38 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+exclude = [
+    '^build/',
+    '^dist/',
+    '^\\.venv/',
+    '^\\.git/',
+    '^\\.env/',
+    '^.+\\.pyi$',
+    '^__pycache__/'
+]
+plugins = [
+    'numpy.typing.mypy_plugin',
+]
+implicit_reexport = false
+disallow_any_explicit = false
+disallow_any_decorated = false
 
 [[tool.mypy.overrides]]
-module = ["tests.*"]
+module = ["numpy.*", "matplotlib.*", "seaborn.*", "tqdm.*", "rich.*", "pytest.*", "pympler.*", "pdbpp.*", "yaml.*", "colorama.*", "plotly.*", "torch.*", "pandas.*", "sklearn.*", "transformers.*", "huggingface_hub.*", "sentence_transformers.*", "faiss.*", "streamlit.*", "umap.*", "discord.*", "aiohttp.*", "requests.*", "beautifulsoup4.*", "lxml.*", "playwright.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*", "examples.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+check_untyped_defs = true
+warn_return_any = false
+warn_unreachable = false

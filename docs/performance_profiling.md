@@ -1,265 +1,322 @@
-# WDBX Performance Profiling Guide
+# Performance Profiling Guide
 
-This guide explains how to use the WDBX performance profiling system to identify bottlenecks, optimize critical operations, and monitor application performance.
+<!-- category: Development -->
+<!-- priority: 65 -->
+<!-- tags: performance, profiling, optimization, monitoring -->
+
+This guide covers performance profiling tools and techniques for WDBX.
 
 ## Overview
 
-The WDBX Performance Profiling system allows you to:
+WDBX includes comprehensive profiling tools for:
+- Execution time profiling
+- Memory usage analysis
+- I/O operations monitoring
+- Resource utilization tracking
+- Performance bottleneck identification
 
-- Measure execution time of operations with high precision
-- Track memory usage impact of specific code blocks
-- Calculate statistical performance metrics (min, max, average, percentiles)
-- Monitor call frequencies and success rates
-- Identify performance trends over time
-- Generate detailed performance reports
+## Time Profiling
 
-## Getting Started
-
-### Basic Profiling
-
-The simplest way to profile a function is to use the `profile` decorator:
+### Function Profiling
 
 ```python
-from wdbx.utils.diagnostics import get_performance_profiler
+from wdbx.profiling import profile_time
 
-profiler = get_performance_profiler()
+# Profile a function
+@profile_time
+def process_data(data):
+    # Process data
+    return result
 
-@profiler.profile("vector_search")
-def search_vectors(query, top_k=10):
-    # Your implementation here
-    return results
+# Profile a code block
+with profile_time("data_processing"):
+    result = process_data(data)
 ```
 
-This automatically tracks:
-- Execution time
-- Memory impact
-- Success/failure rate
-- Call frequency
-
-### Profiling Code Blocks
-
-For more granular profiling, use the context manager:
+### Detailed Timing
 
 ```python
-from wdbx.utils.diagnostics import get_performance_profiler
+from wdbx.profiling import Timer
 
-profiler = get_performance_profiler()
+# Create timer
+timer = Timer()
 
-def process_batch(items):
-    # Some initial setup
-    
-    with profiler.profile_block("batch_processing"):
-        # Only this block will be profiled
-        for item in items:
-            process_item(item)
-            
-    # Cleanup code here
+# Start timing
+timer.start("operation1")
+# ... do operation 1 ...
+timer.stop("operation1")
+
+# Get timing results
+results = timer.get_results()
+print(f"Operation 1 took {results['operation1']} seconds")
 ```
 
-### Analyzing Performance Data
+## Memory Profiling
 
-To retrieve statistics for a profiled operation:
+### Memory Usage
 
 ```python
-stats = profiler.get_statistics("vector_search")
+from wdbx.profiling import profile_memory
 
-print(f"Call count: {stats['call_count']}")
-print(f"Average duration: {stats['avg_duration_ms']:.2f} ms")
-print(f"95th percentile: {stats['p95_duration_ms']:.2f} ms")
-print(f"Success rate: {stats['success_rate']:.1f}%")
-print(f"Memory impact: {stats['avg_memory_delta'] / 1024:.2f} KB per call")
-print(f"Calls per second: {stats['calls_per_second']:.2f}")
+# Profile memory usage
+@profile_memory
+def process_large_dataset(dataset):
+    # Process dataset
+    return result
+
+# Get memory stats
+stats = process_large_dataset.get_memory_stats()
 ```
 
-### Profiling Multiple Operations
-
-You can profile multiple operations and compare their performance:
+### Memory Tracking
 
 ```python
-# Get a list of all profiled operations
-operations = profiler.get_all_operations()
+from wdbx.profiling import MemoryTracker
 
-print("Performance Comparison:")
-print("-" * 50)
-print(f"{'Operation':<30} {'Avg (ms)':<10} {'Max (ms)':<10} {'Calls/s':<8}")
-print("-" * 50)
+# Track memory usage
+tracker = MemoryTracker()
 
-for op in operations:
-    stats = profiler.get_statistics(op)
-    print(f"{op:<30} {stats['avg_duration_ms']:<10.2f} {stats['max_duration_ms']:<10.2f} {stats['calls_per_second']:<8.2f}")
+# Start tracking
+tracker.start()
+
+# ... perform operations ...
+
+# Get memory usage
+usage = tracker.get_usage()
+print(f"Peak memory: {usage['peak']} MB")
 ```
 
-### Resetting Statistics
+## I/O Profiling
 
-To reset statistics for a fresh measurement:
+### File Operations
 
 ```python
-# Reset a specific operation
-profiler.reset_statistics("vector_search")
+from wdbx.profiling import profile_io
 
-# Reset all operations
-profiler.reset_statistics()
+# Profile I/O operations
+@profile_io
+def read_data(file_path):
+    with open(file_path, 'r') as f:
+        return f.read()
+
+# Get I/O stats
+stats = read_data.get_io_stats()
 ```
 
-### Generating Performance Reports
-
-You can easily generate comprehensive performance reports in text or markdown format:
+### Network Operations
 
 ```python
-from wdbx.utils.diagnostics import generate_performance_report
+from wdbx.profiling import profile_network
 
-# Generate a plain text report
-text_report = generate_performance_report()
-print(text_report)
+# Profile network operations
+@profile_network
+def fetch_data(url):
+    # Fetch data from URL
+    return response
 
-# Generate a markdown report (for documentation or GitHub)
-md_report = generate_performance_report(format_type="markdown")
-with open("performance_report.md", "w") as f:
-    f.write(md_report)
+# Get network stats
+stats = fetch_data.get_network_stats()
 ```
 
-The generated report includes:
-- Summary statistics across all operations
-- Detailed performance metrics for each operation
-- Error analysis for operations with failures
-- Recommendations for performance optimization
+## Resource Profiling
 
-Example report:
-
-```
-WDBX PERFORMANCE REPORT
-==================================================
-
-Total Operations Profiled: 8
-Total Function Calls: 1247
-Operations with Errors: 1
-
-OPERATION DETAILS
---------------------------------------------------------------------------------
-Operation                       Calls     Avg (ms)   P95 (ms)   Max (ms)   Mem (KB)   Success %
---------------------------------------------------------------------------------
-vector_store.search_similar     342       75.32      124.56     198.76     12.34      100.0    
-block_manager.create_block      185       42.18      68.92      87.34      45.67      99.5     
-vector_store.add                458       18.45      32.17      45.89      2.45       100.0    
-...
-
-ERRORS
---------------------------------------------------
-Operation                       Error Count      Error Rate %     
---------------------------------------------------
-block_manager.create_block      1                0.5              
-
-PERFORMANCE RECOMMENDATIONS
---------------------------------------------------
-* Optimize vector_store.search_similar: Average duration 75.32ms
-* Optimize block_manager.create_block: Average duration 42.18ms
-* Optimize vector_store.add: Average duration 18.45ms
-* Review memory usage in block_manager.create_block: Average impact 45.67KB per call
-```
-
-## Advanced Usage
-
-### Integration with Monitoring Systems
-
-The profiling data is automatically integrated with the WDBX diagnostics system, allowing you to:
-
-- Track performance trends over time
-- Set up alerts for performance degradation
-- Generate performance reports
+### CPU Usage
 
 ```python
-from wdbx.utils.diagnostics import system_diagnostics
+from wdbx.profiling import CPUProfiler
 
-# Get all metrics including profiling data
-metrics = system_diagnostics.get_metrics_history()
+# Profile CPU usage
+profiler = CPUProfiler()
 
-# Access profiler data for a specific operation
-vector_search_metrics = metrics['profiler_data'].get('vector_search', [])
+# Start profiling
+profiler.start()
 
-# Example: Calculate moving average of the last 10 calls
-if vector_search_metrics:
-    recent_durations = [m['duration_ms'] for m in vector_search_metrics[-10:]]
-    moving_avg = sum(recent_durations) / len(recent_durations)
-    print(f"Recent average execution time: {moving_avg:.2f} ms")
+# ... perform operations ...
+
+# Get CPU stats
+stats = profiler.get_stats()
+print(f"CPU usage: {stats['cpu_percent']}%")
 ```
 
-### Identifying Memory Leaks
-
-The profiler can help identify potential memory leaks by tracking memory delta over time:
+### Thread Profiling
 
 ```python
-for op in profiler.get_all_operations():
-    stats = profiler.get_statistics(op)
-    if stats['total_memory_impact'] > 10 * 1024 * 1024:  # 10 MB
-        print(f"Warning: Operation '{op}' has accumulated {stats['total_memory_impact'] / (1024*1024):.2f} MB")
+from wdbx.profiling import ThreadProfiler
+
+# Profile thread usage
+profiler = ThreadProfiler()
+
+# Start profiling
+profiler.start()
+
+# ... perform operations ...
+
+# Get thread stats
+stats = profiler.get_stats()
+print(f"Active threads: {stats['active_threads']}")
 ```
 
-### Performance Comparison Between Components
+## Performance Analysis
 
-Compare performance metrics across different system components:
+### Bottleneck Detection
 
 ```python
-# Profile vector store operations
-vector_store = OptimizedVectorStore()
-with profiler.profile_block("vector_store.add"):
-    vector_store.add(vector_id, vector)
+from wdbx.profiling import detect_bottlenecks
 
-# Profile block manager operations
-block_manager = OptimizedBlockManager()
-with profiler.profile_block("block_manager.create_block"):
-    block_manager.create_block_batch(blocks)
+# Analyze performance bottlenecks
+bottlenecks = detect_bottlenecks(
+    function=process_data,
+    input_data=test_data,
+)
 
-# Compare performance
-vs_stats = profiler.get_statistics("vector_store.add")
-bm_stats = profiler.get_statistics("block_manager.create_block")
+# Print bottlenecks
+for bottleneck in bottlenecks:
+    print(f"Bottleneck in {bottleneck['location']}")
+    print(f"Impact: {bottleneck['impact']}%")
+```
 
-print(f"Vector Store Add: {vs_stats['avg_duration_ms']:.2f} ms")
-print(f"Block Manager Create: {bm_stats['avg_duration_ms']:.2f} ms")
+### Performance Reports
+
+```python
+from wdbx.profiling import PerformanceReport
+
+# Generate performance report
+report = PerformanceReport()
+
+# Add profiling data
+report.add_time_data(timer.get_results())
+report.add_memory_data(tracker.get_usage())
+report.add_cpu_data(cpu_profiler.get_stats())
+
+# Generate report
+report.generate("performance_report.html")
 ```
 
 ## Best Practices
 
-1. **Profile Strategically**: Focus on profiling critical operations and suspected bottlenecks, not everything.
+1. **Selective Profiling**
+   - Profile specific components
+   - Focus on performance-critical paths
+   - Use appropriate profiling tools
 
-2. **Consider Overhead**: The profiler itself adds a small overhead. For extremely time-sensitive operations, consider enabling profiling only in development/testing.
+2. **Resource Management**
+   - Monitor resource usage
+   - Clean up profiling data
+   - Use context managers
 
-3. **Reset When Appropriate**: Reset statistics after configuration changes or optimizations to get clean measurements.
+3. **Data Collection**
+   - Collect relevant metrics
+   - Store historical data
+   - Analyze trends
 
-4. **Monitor Memory Impact**: Pay close attention to memory impact statistics to identify memory-intensive operations.
+4. **Analysis**
+   - Identify bottlenecks
+   - Compare performance
+   - Make data-driven decisions
 
-5. **Use Context Managers for Granularity**: When profiling complex functions, use context managers to isolate specific sections rather than profiling the entire function.
+## Common Issues
 
-6. **Review Periodically**: Set up regular performance reviews to track changes over time, especially after updates.
+### Memory Leaks
 
-## Troubleshooting
+Problem: Memory usage grows over time
+Solution:
+```python
+from wdbx.profiling import memory_leak_detector
 
-### High Standard Deviation
+# Detect memory leaks
+leaks = memory_leak_detector.analyze(
+    function=process_data,
+    iterations=100,
+)
 
-If you see a high standard deviation in your timing metrics, it may indicate:
-- Inconsistent workloads
-- Background processes interfering
-- Cache effects (cold vs. warm cache)
-- Garbage collection pauses
+# Fix leaks
+for leak in leaks:
+    print(f"Memory leak in {leak['location']}")
+```
 
-Try profiling with more consistent workloads or increasing the sample size.
+### Performance Degradation
 
-### Negative Memory Delta
+Problem: Performance decreases over time
+Solution:
+```python
+from wdbx.profiling import performance_analyzer
 
-A negative memory delta doesn't necessarily indicate a memory leak fix. It may be due to:
-- Garbage collection timing
-- Memory fragmentation
-- System memory management
+# Analyze performance
+analysis = performance_analyzer.analyze(
+    function=process_data,
+    duration="1h",
+)
 
-For accurate memory profiling, consider running multiple iterations and looking at the aggregate trend.
+# Get recommendations
+recommendations = analysis.get_recommendations()
+```
 
-### High Error Count
+## Configuration
 
-If you notice a high error count for an operation:
-1. Check exception handling
-2. Verify input validation
-3. Ensure resources are properly initialized
-4. Look for race conditions in multi-threaded contexts
+### Profiler Settings
 
-## Conclusion
+```python
+from wdbx.profiling import ProfilerConfig
 
-Effective performance profiling is a key part of maintaining high-quality code. By regularly monitoring and analyzing performance metrics, you can identify problems early, optimize critical paths, and ensure your application remains responsive and efficient. 
+# Configure profiler
+config = ProfilerConfig(
+    sampling_interval=0.1,
+    max_samples=1000,
+    output_format="json",
+)
+
+# Apply configuration
+profiler.configure(config)
+```
+
+### Output Settings
+
+```python
+# Configure output
+output_config = {
+    "format": "html",
+    "path": "reports/",
+    "include_graphs": True,
+}
+
+# Apply settings
+report.configure_output(output_config)
+```
+
+## Advanced Features
+
+### Custom Metrics
+
+```python
+from wdbx.profiling import CustomMetric
+
+# Define custom metric
+class QueryTimeMetric(CustomMetric):
+    def measure(self, data):
+        return calculate_query_time(data)
+
+# Use custom metric
+profiler.add_metric(QueryTimeMetric())
+```
+
+### Automated Profiling
+
+```python
+from wdbx.profiling import AutoProfiler
+
+# Configure auto profiling
+auto_profiler = AutoProfiler(
+    interval="1h",
+    metrics=["cpu", "memory", "io"],
+)
+
+# Start auto profiling
+auto_profiler.start()
+```
+
+## Resources
+
+- [Profiling Documentation](https://wdbx.readthedocs.io/profiling)
+- [Performance Tuning](https://wdbx.readthedocs.io/performance)
+- [Monitoring Guide](https://wdbx.readthedocs.io/monitoring)
+- [Optimization Tips](https://wdbx.readthedocs.io/optimization) 
