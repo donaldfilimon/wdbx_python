@@ -47,7 +47,7 @@ class ProcessingStats:
     end_time: float = 0.0
     memory_before: float = field(default_factory=get_memory_usage)
     memory_after: float = 0.0
-    memory_peak: float = field(default_factory=get_memory_usage)
+    memory_peak: float = field(default_factory(get_memory_usage)
     num_vectors_processed: int = 0
     num_blocks_processed: int = 0
     optimization_count: int = 0
