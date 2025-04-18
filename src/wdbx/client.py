@@ -21,7 +21,7 @@ from .api.async_api import AsyncWDBXClient, get_async_client
 from .config import get_config
 from .core.data_structures import Block, EmbeddingVector
 from .core.wdbx_core import WDBXCore, get_wdbx_core
-from .utils.errors import WDBXError, handle_error
+from .utils.errors import WDBXError, handle_error, is_retriable_error
 from .utils.logging_utils import LogContext, get_logger
 from .utils.profiler import profile
 
@@ -29,7 +29,7 @@ from .utils.profiler import profile
 logger = get_logger("wdbx.client")
 
 
-def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
+def retry_on_failure(max_retries: int = 3, delay: float = 1.0, exceptions: Tuple[Exception] = (Exception,)):
     """Decorator for retrying failed operations."""
 
     def decorator(func):
@@ -39,11 +39,14 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
-                except Exception as e:
+                except exceptions as e:
                     last_exception = e
-                    if attempt < max_retries - 1:
+                    if attempt < max_retries - 1 and is_retriable_error(e):
                         logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying...")
                         await asyncio.sleep(delay * (attempt + 1))
+                    else:
+                        logger.error(f"Attempt {attempt + 1} failed: {str(e)}. No more retries.")
+                        break
             raise last_exception
 
         return wrapper

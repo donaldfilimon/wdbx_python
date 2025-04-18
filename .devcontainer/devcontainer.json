@@ -1,0 +1,5 @@
+{
+  "tasks": {
+    "build": "pip install -e . && pip install -r requirements.txt && pre-commit install"
+  }
+}
