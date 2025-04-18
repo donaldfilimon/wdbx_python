@@ -67,16 +67,20 @@ class AsyncWDBXClient:
         Returns:
             Created EmbeddingVector instance
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL,
-            functools.partial(
-                self.wdbx.create_vector,
-                vector_data=vector_data,
-                metadata=metadata,
-                vector_id=vector_id,
-                bias_score=bias_score,
-            ),
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL,
+                functools.partial(
+                    self.wdbx.create_vector,
+                    vector_data=vector_data,
+                    metadata=metadata,
+                    vector_id=vector_id,
+                    bias_score=bias_score,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error creating vector: {e}")
+            raise
 
     async def create_block(
         self,
@@ -97,16 +101,20 @@ class AsyncWDBXClient:
         Returns:
             Created Block instance
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL,
-            functools.partial(
-                self.wdbx.create_block,
-                data=data,
-                embeddings=embeddings,
-                block_id=block_id,
-                references=references,
-            ),
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL,
+                functools.partial(
+                    self.wdbx.create_block,
+                    data=data,
+                    embeddings=embeddings,
+                    block_id=block_id,
+                    references=references,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error creating block: {e}")
+            raise
 
     async def find_similar_vectors(
         self,
@@ -125,15 +133,19 @@ class AsyncWDBXClient:
         Returns:
             List of (vector_id, similarity) tuples sorted by similarity
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL,
-            functools.partial(
-                self.wdbx.find_similar_vectors,
-                query_vector=query_vector,
-                top_k=top_k,
-                threshold=threshold,
-            ),
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL,
+                functools.partial(
+                    self.wdbx.find_similar_vectors,
+                    query_vector=query_vector,
+                    top_k=top_k,
+                    threshold=threshold,
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error finding similar vectors: {e}")
+            raise
 
     async def search_blocks(
         self,
@@ -152,12 +164,16 @@ class AsyncWDBXClient:
         Returns:
             List of (block, similarity) tuples sorted by similarity
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL,
-            functools.partial(
-                self.wdbx.search_blocks, query=query, top_k=top_k, threshold=threshold
-            ),
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL,
+                functools.partial(
+                    self.wdbx.search_blocks, query=query, top_k=top_k, threshold=threshold
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error searching blocks: {e}")
+            raise
 
     async def save_vector(self, vector: EmbeddingVector, overwrite: bool = False) -> bool:
         """
@@ -170,10 +186,14 @@ class AsyncWDBXClient:
         Returns:
             True if successful
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL,
-            functools.partial(self.wdbx.save_vector, vector=vector, overwrite=overwrite),
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL,
+                functools.partial(self.wdbx.save_vector, vector=vector, overwrite=overwrite),
+            )
+        except Exception as e:
+            logger.error(f"Error saving vector: {e}")
+            raise
 
     async def save_block(self, block: Block, overwrite: bool = False) -> bool:
         """
@@ -186,9 +206,13 @@ class AsyncWDBXClient:
         Returns:
             True if successful
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL, functools.partial(self.wdbx.save_block, block=block, overwrite=overwrite)
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL, functools.partial(self.wdbx.save_block, block=block, overwrite=overwrite)
+            )
+        except Exception as e:
+            logger.error(f"Error saving block: {e}")
+            raise
 
     async def load_vector(self, vector_id: str) -> Optional[EmbeddingVector]:
         """
@@ -200,9 +224,13 @@ class AsyncWDBXClient:
         Returns:
             Loaded vector or None if not found
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL, functools.partial(self.wdbx.load_vector, vector_id=vector_id)
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL, functools.partial(self.wdbx.load_vector, vector_id=vector_id)
+            )
+        except Exception as e:
+            logger.error(f"Error loading vector: {e}")
+            raise
 
     async def load_block(self, block_id: str) -> Optional[Block]:
         """
@@ -214,17 +242,25 @@ class AsyncWDBXClient:
         Returns:
             Loaded block or None if not found
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL, functools.partial(self.wdbx.load_block, block_id=block_id)
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL, functools.partial(self.wdbx.load_block, block_id=block_id)
+            )
+        except Exception as e:
+            logger.error(f"Error loading block: {e}")
+            raise
 
     async def optimize_memory(self) -> None:
         """
         Optimize memory usage asynchronously.
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            _THREAD_POOL, self.wdbx.optimize_memory
-        )
+        try:
+            return await asyncio.get_event_loop().run_in_executor(
+                _THREAD_POOL, self.wdbx.optimize_memory
+            )
+        except Exception as e:
+            logger.error(f"Error optimizing memory: {e}")
+            raise
 
     async def get_stats(self) -> Dict[str, Any]:
         """
@@ -233,19 +269,31 @@ class AsyncWDBXClient:
         Returns:
             Dictionary of statistics
         """
-        return await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.get_stats)
+        try:
+            return await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.get_stats)
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            raise
 
     async def clear(self) -> None:
         """
         Clear all in-memory data asynchronously.
         """
-        return await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.clear)
+        try:
+            return await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.clear)
+        except Exception as e:
+            logger.error(f"Error clearing data: {e}")
+            raise
 
     async def shutdown(self) -> None:
         """
         Shut down WDBX core asynchronously and release resources.
         """
-        await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.shutdown)
+        try:
+            await asyncio.get_event_loop().run_in_executor(_THREAD_POOL, self.wdbx.shutdown)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+            raise
 
         # Shutdown thread pool
         self._thread_pool.shutdown(wait=True)
