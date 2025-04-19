@@ -106,7 +106,7 @@ def fix_try_except_issues(content):
                 except_block = f'{indent}except Exception as e:\n{indent}    logger.error(f"Error: {{e}}", exc_info=True)\n'
 
             modified_content = (
-                modified_content[: match.end()] + except_block + modified_content[match.end() :]
+                modified_content[: match.end()] + except_block + modified_content[match.end():]
             )
 
     return modified_content
@@ -166,7 +166,7 @@ def fix_command_registration_issues(content):
                     replacement = "# Duplicate command - commented out\n# " + match.group(
                         0
                     ).replace("\n", "\n# ")
-                    content = content[: match.start()] + replacement + content[match.end() :]
+                    content = content[: match.start()] + replacement + content[match.end():]
 
     return content
 

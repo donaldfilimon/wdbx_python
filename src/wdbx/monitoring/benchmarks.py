@@ -293,7 +293,7 @@ def benchmark_cosine_similarity(
 
     # Create query vector and targets
     query = vectors[0]
-    targets = vectors[1 : batch_size + 1]
+    targets = vectors[1: batch_size + 1]
 
     # Benchmark each backend
     for backend in backends:

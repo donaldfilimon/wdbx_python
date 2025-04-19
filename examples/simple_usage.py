@@ -10,6 +10,7 @@ This example demonstrates the basic functionality of WDBX, including:
 - Retrieving conversation context
 """
 
+from src.wdbx import EmbeddingVector, WDBXConfig, create_wdbx
 import os
 import sys
 
@@ -20,7 +21,6 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import from the reorganized package
-from src.wdbx import EmbeddingVector, WDBXConfig, create_wdbx
 
 
 def main():

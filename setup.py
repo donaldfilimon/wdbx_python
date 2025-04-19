@@ -80,7 +80,7 @@ extras_require = {
 
 # Add an 'all' extras_require that includes everything
 extras_require["all"] = list(set(
-    dep for deps in extras_require.values() 
+    dep for deps in extras_require.values()
     for dep in (deps if isinstance(deps, list) else [deps])
 ))
 

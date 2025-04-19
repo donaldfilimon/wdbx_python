@@ -56,7 +56,7 @@ def fix_long_lines(file_path):
 
             # Split the line
             first_part = line[: split_at + 1]
-            second_part = line[split_at + 1 :].lstrip()
+            second_part = line[split_at + 1:].lstrip()
 
             # Handle indentation for the second line
             indent = len(line) - len(line.lstrip())

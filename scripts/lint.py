@@ -42,8 +42,10 @@ def fix_discord_bot(file_path: str) -> bool:
         # Fix try statements immediately followed by non-except/finally blocks
         # Adds a basic except block
         content = re.sub(
-            r"^(\s+try:)(\n\s+(?!except|finally)[^\n]+)",  # Looks for try: not followed by except/finally
-            r'\1\2\n\1    except Exception as e:\n\1        logger.error(f"Error: {e}", exc_info=True)\n\1        # Placeholder: Add appropriate error handling, e.g., await ctx.send(...)',  # Add basic exception handler
+            # Looks for try: not followed by except/finally
+            r"^(\s+try:)(\n\s+(?!except|finally)[^\n]+)",
+            # Add basic exception handler
+            r'\1\2\n\1    except Exception as e:\n\1        logger.error(f"Error: {e}", exc_info=True)\n\1        # Placeholder: Add appropriate error handling, e.g., await ctx.send(...)',
             content,
             flags=re.MULTILINE,
         )

@@ -5,14 +5,6 @@ Tests the SystemMonitor class and utility functions in wdbx.utils.diagnostics.
 """
 
 # Import from context
-import sys
-import time
-import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from wdbx.utils.diagnostics import (
     SystemMonitor,
     get_monitor,
@@ -21,6 +13,13 @@ from wdbx.utils.diagnostics import (
     stop_monitoring,
     time_operation,
 )
+import sys
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 class TestSystemMonitor(unittest.TestCase):

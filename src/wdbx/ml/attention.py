@@ -8,14 +8,38 @@ that can work with multiple ML backends (PyTorch, JAX, NumPy).
 
 from __future__ import annotations
 
+from math import sqrt  # Adding missing import for sqrt
 from typing import Dict, Optional, Tuple
 
 import numpy as np
 
 from ..utils.logging import get_logger
-from . import JAX_AVAILABLE, TORCH_AVAILABLE, ArrayLike
+
+# Avoid circular imports by checking availability directly
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    jnp = None
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
+# Define ArrayLike directly to avoid circular imports
+from typing import Any, Union
+
+ArrayLike = Union[np.ndarray, Any]  # Any will represent jnp.ndarray and torch.Tensor
 
 logger = get_logger("wdbx.ml.attention")
+
+# Import after availability checks to avoid circular imports
+from .backend import get_ml_backend
 
 # Create an ML backend instance for optimized operations
 ml_backend = get_ml_backend()
@@ -54,8 +78,6 @@ class MultiHeadAttention:
         scale_factor = sqrt(2.0 / d_model)  # He initialization
 
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             # Use PyTorch for parameter initialization
             self.W_q = torch.randn(num_heads, d_model, self.d_k) * scale_factor
             self.W_k = torch.randn(num_heads, d_model, self.d_k) * scale_factor
@@ -70,8 +92,6 @@ class MultiHeadAttention:
             self.W_o = self.W_o.to(self.device)
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax
-
             # Use JAX for parameter initialization
             key = jax.random.PRNGKey(0)
             key, subkey1, subkey2, subkey3, subkey4 = jax.random.split(key, 5)
@@ -104,8 +124,6 @@ class MultiHeadAttention:
             Softmax output using the active backend
         """
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             # Convert to PyTorch if needed
             x_torch = x if isinstance(x, torch.Tensor) else torch.tensor(x, device=self.device)
             mask_torch = None
@@ -124,8 +142,6 @@ class MultiHeadAttention:
             return torch.nn.functional.softmax(x_torch, dim=-1)
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax.numpy as jnp
-
             # Convert to JAX if needed
             x_jax = x if isinstance(x, jnp.ndarray) else jnp.array(x)
 
@@ -169,8 +185,6 @@ class MultiHeadAttention:
             return x
 
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             # Convert to PyTorch if needed
             x_torch = x if isinstance(x, torch.Tensor) else torch.tensor(x, device=self.device)
 
@@ -178,9 +192,6 @@ class MultiHeadAttention:
             return torch.nn.functional.dropout(x_torch, p=self.dropout_rate, training=training)
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax
-            import jax.numpy as jnp
-
             # Convert to JAX if needed
             x_jax = x if isinstance(x, jnp.ndarray) else jnp.array(x)
 
@@ -205,8 +216,6 @@ class MultiHeadAttention:
 
     def _jax_attention(self, Q, K, V, mask=None):
         """JAX implementation of scaled dot-product attention for JIT compilation."""
-        import jax.numpy as jnp
-
         # Compute attention scores: Q * K^T / sqrt(d_k)
         scores = jnp.matmul(Q, jnp.transpose(K, (0, 2, 1))) / sqrt(self.d_k)
 
@@ -244,8 +253,6 @@ class MultiHeadAttention:
             Attention output and attention weights
         """
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             # Convert inputs to PyTorch tensors
             Q_torch = Q if isinstance(Q, torch.Tensor) else torch.tensor(Q, device=self.device)
             K_torch = K if isinstance(K, torch.Tensor) else torch.tensor(K, device=self.device)
@@ -277,8 +284,6 @@ class MultiHeadAttention:
             return output, attention_weights
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax.numpy as jnp
-
             # Convert inputs to JAX arrays
             Q_jax = Q if isinstance(Q, jnp.ndarray) else jnp.array(Q)
             K_jax = K if isinstance(K, jnp.ndarray) else jnp.array(K)
@@ -347,8 +352,6 @@ class MultiHeadAttention:
         """
         # Convert inputs to the appropriate backend format
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             # Get tensors in PyTorch format
             Q_torch = Q if isinstance(Q, torch.Tensor) else torch.tensor(Q, device=self.device)
             K_torch = K if isinstance(K, torch.Tensor) else torch.tensor(K, device=self.device)
@@ -405,8 +408,6 @@ class MultiHeadAttention:
             return output, avg_attention
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax.numpy as jnp
-
             # Get arrays in JAX format
             Q_jax = Q if isinstance(Q, jnp.ndarray) else jnp.array(Q)
             K_jax = K if isinstance(K, jnp.ndarray) else jnp.array(K)
@@ -523,16 +524,12 @@ class MultiHeadAttention:
             weights: Dictionary of weight matrices as NumPy arrays
         """
         if self.backend_type == "pytorch" and TORCH_AVAILABLE:
-            import torch
-
             self.W_q = torch.tensor(weights["W_q"], device=self.device)
             self.W_k = torch.tensor(weights["W_k"], device=self.device)
             self.W_v = torch.tensor(weights["W_v"], device=self.device)
             self.W_o = torch.tensor(weights["W_o"], device=self.device)
 
         elif self.backend_type == "jax" and JAX_AVAILABLE:
-            import jax.numpy as jnp
-
             self.W_q = jnp.array(weights["W_q"])
             self.W_k = jnp.array(weights["W_k"])
             self.W_v = jnp.array(weights["W_v"])

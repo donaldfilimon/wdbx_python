@@ -3,6 +3,7 @@
 Example showing how to use the legacy functionality from wdbx.py
 """
 
+from src.wdbx import EmbeddingVector, WDBXConfig, create_wdbx
 import os
 import sys
 
@@ -12,7 +13,6 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import from reorganized structure
-from src.wdbx import EmbeddingVector, WDBXConfig, create_wdbx
 
 
 def example_usage():

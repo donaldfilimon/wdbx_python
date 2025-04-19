@@ -2,6 +2,8 @@
 Pytest configuration file for WDBX tests.
 """
 
+from wdbx.security import JWTAuthProvider
+from wdbx import BlockChainManager, EmbeddingVector, VectorStore, WDBXConfig
 import os
 import sys
 from pathlib import Path
@@ -14,8 +16,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import from wdbx package
-from wdbx import BlockChainManager, EmbeddingVector, VectorStore, WDBXConfig
-from wdbx.security import JWTAuthProvider
 
 # Set up a test secret key
 TEST_SECRET_KEY = "test_secret_key_123"

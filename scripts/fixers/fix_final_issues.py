@@ -85,7 +85,7 @@ def fix_specific_lines(file_path, line_numbers):
 
                     # Split the line
                     first_part = original_line[: split_at + 1]
-                    second_part = original_line[split_at + 1 :].lstrip()
+                    second_part = original_line[split_at + 1:].lstrip()
 
                     # Add indentation to the second part
                     second_part = indent_str + "    " + second_part

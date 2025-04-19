@@ -35,13 +35,13 @@ def fix_remaining_issues():
                     # If line contains quotes, it's likely a string - split at 80 chars
                     pos = line.rfind(" ", 0, 80)
                     if pos != -1:
-                        lines[i] = line[:pos] + "\n" + " " * 8 + line[pos + 1 :]
+                        lines[i] = line[:pos] + "\n" + " " * 8 + line[pos + 1:]
                 else:
                     # Otherwise try to split at a reasonable point
                     pos = line.rfind(" ", 0, 90)
                     if pos != -1:
                         indent = len(line) - len(line.lstrip())
-                        lines[i] = line[:pos] + "\n" + " " * indent + line[pos + 1 :]
+                        lines[i] = line[:pos] + "\n" + " " * indent + line[pos + 1:]
 
     # Fix W391: blank line at end of file
     # Make sure there's exactly one blank line at the end

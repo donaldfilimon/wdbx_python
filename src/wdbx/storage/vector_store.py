@@ -10,7 +10,9 @@ import json
 import logging
 import os
 import pickle
+import importlib.util
 import time
+import atexit
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar, Union
 
@@ -23,14 +25,14 @@ from ..core.data_structures import EmbeddingVector
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Try to import JAX for faster vector operations
-try:
+# Detect JAX availability via importlib to avoid unresolved import errors
+spec = importlib.util.find_spec("jax")
+if spec:
     import jax
     import jax.numpy as jnp
-
     HAS_JAX = True
     logger.info("JAX is available and will be used for vector operations")
-except ImportError:
+else:
     HAS_JAX = False
     logger.info("JAX not available, falling back to NumPy")
 
@@ -212,7 +214,7 @@ class VectorStore:
         storage_path: Optional[Union[str, Path]] = None,
         use_numpy: bool = True,
         auto_save: bool = True,
-        auto_save_interval: int = 100,
+        auto_save_interval: int = 1,
     ) -> None:
         """
         Initialize a new vector store.
@@ -242,12 +244,18 @@ class VectorStore:
         self.index = PythonVectorIndex(dimension=vector_dimension)
 
         # Handle storage path
-        if storage_path is not None:
-            self.storage_path = Path(storage_path).resolve()
-            os.makedirs(self.storage_path, exist_ok=True)
-            self._try_load()
-        else:
-            self.storage_path = None
+        # Default to WDBX_DATA_DIR or fallback to project data dir
+        if storage_path is None:
+            storage_path = os.environ.get(
+                "WDBX_DATA_DIR"
+            ) or (Path(__file__).parent.parent / "data")
+        # Ensure storage directory exists and load existing data
+        self.storage_path = Path(storage_path).resolve()
+        os.makedirs(self.storage_path, exist_ok=True)
+        self._try_load()
+        # Register save at exit to ensure data persistence
+        if self.auto_save:
+            atexit.register(self.save)
 
         logger.info(
             f"Initialized VectorStore with dimension={vector_dimension}, "
@@ -889,7 +897,7 @@ class VectorStore:
             return []
 
         results = []
-        batches = [vectors[i : i + batch_size] for i in range(0, len(vectors), batch_size)]
+        batches = [vectors[i: i + batch_size] for i in range(0, len(vectors), batch_size)]
 
         logger.info(
             f"Processing {len(vectors)} vectors in {len(batches)} batches of size {batch_size}"

@@ -6,6 +6,7 @@ This module provides methods for tracing activation patterns and detecting seman
 by tracking neural network activations to identify reasoning paths and potential errors.
 """
 
+import sys
 import threading
 import time
 import uuid
@@ -733,6 +734,3 @@ class NeuralBacktracker:
             traces: Trace data to log
         """
         ml_logger.debug(f"NeuralBacktracker traces: {traces}")
-
-
-import sys

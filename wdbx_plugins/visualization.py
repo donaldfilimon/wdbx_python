@@ -24,8 +24,8 @@ PCA_N_COMPONENTS = 2
 TSNE_N_COMPONENTS = 2
 TSNE_DEFAULT_ITER = 250
 TSNE_DEFAULT_PERPLEXITY_LOW = 2
-TSNE_DEFAULT_PERPLEXITY_HIGH = 5 # Used for > 10 vectors
-TSNE_PERPLEXITY_THRESHOLD = 10 # Num vectors threshold for perplexity calc
+TSNE_DEFAULT_PERPLEXITY_HIGH = 5  # Used for > 10 vectors
+TSNE_PERPLEXITY_THRESHOLD = 10  # Num vectors threshold for perplexity calc
 RANDOM_STATE_SEED = 42
 
 logger = logging.getLogger("WDBX.plugins.visualization")
@@ -425,7 +425,8 @@ def get_vectors_for_query(
             elif hasattr(db, "search_with_scores") or hasattr(
                 db.vector_store, "search_with_scores"
             ):
-                search_method = getattr(db, "search_with_scores", None) or db.vector_store.search_with_scores
+                search_method = getattr(db, "search_with_scores",
+                                        None) or db.vector_store.search_with_scores
                 results = search_method(query_embedding, k=max_vectors)
                 vector_ids = [result[0] for result in results]
             else:
@@ -734,7 +735,8 @@ def cmd_tsne_visualization(db, args: str) -> None:
         # Apply t-SNE for dimensionality reduction
         tsne = TSNE(
             n_components=TSNE_N_COMPONENTS,
-            perplexity=min(TSNE_DEFAULT_PERPLEXITY_HIGH, len(vectors) - 1) if len(vectors) > TSNE_PERPLEXITY_THRESHOLD else TSNE_DEFAULT_PERPLEXITY_LOW,
+            perplexity=min(TSNE_DEFAULT_PERPLEXITY_HIGH, len(
+                vectors) - 1) if len(vectors) > TSNE_PERPLEXITY_THRESHOLD else TSNE_DEFAULT_PERPLEXITY_LOW,
             n_iter=TSNE_DEFAULT_ITER,
             random_state=RANDOM_STATE_SEED,
         )

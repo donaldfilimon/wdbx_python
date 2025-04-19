@@ -27,39 +27,41 @@ except ImportError:
         NAME = "base_plugin"
         VERSION = "0.1.0"
         DESCRIPTION = "Base WDBX plugin"
-        
+
         def __init__(self, config=None):
             self.config = config or {}
-            
+
         def initialize(self):
             return True
-            
+
         def shutdown(self):
             return True
 
 # Set up logging
 logger = logging.getLogger("wdbx.plugins.sample")
 
+
 class SamplePlugin(WDBXPlugin):
     """Sample plugin demonstrating WDBX plugin structure and VS Code launch capabilities."""
-    
+
     NAME = "sample_plugin"
     VERSION = "1.0.0"
     DESCRIPTION = "Sample plugin for demonstration purposes"
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the sample plugin with optional configuration."""
         super().__init__(config)
         self.is_initialized = False
         self.debug_mode = os.environ.get("DEBUG", "0") == "1"
-        
+
         # Demo of accessing environment variables set by launch.json
         self.pythonpath = os.environ.get("PYTHONPATH", "")
-        
+
         if self.debug_mode:
             logger.setLevel(logging.DEBUG)
-            logger.debug(f"Sample plugin initialized in DEBUG mode with PYTHONPATH: {self.pythonpath}")
-    
+            logger.debug(
+                f"Sample plugin initialized in DEBUG mode with PYTHONPATH: {self.pythonpath}")
+
     def initialize(self) -> bool:
         """Initialize the plugin."""
         logger.info(f"Initializing {self.NAME} v{self.VERSION}")
@@ -71,13 +73,13 @@ class SamplePlugin(WDBXPlugin):
         except Exception as e:
             logger.error(f"Failed to initialize plugin: {e}")
             return False
-    
+
     def shutdown(self) -> bool:
         """Clean up resources when shutting down."""
         logger.info(f"Shutting down {self.NAME}")
         self.is_initialized = False
         return True
-    
+
     def get_sample_data(self) -> Dict[str, Any]:
         """Return sample data that demonstrates plugin functionality."""
         return {
@@ -92,20 +94,20 @@ class SamplePlugin(WDBXPlugin):
                 "platform": sys.platform
             }
         }
-    
+
     def process_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Process data according to plugin logic."""
         if not self.is_initialized:
             logger.warning("Plugin not initialized. Cannot process data.")
             return {"error": "Plugin not initialized"}
-        
+
         # Sample processing logic
         result = {
             "processed_by": f"{self.NAME} v{self.VERSION}",
             "original_data_keys": list(data.keys()),
             "result": "Successfully processed"
         }
-        
+
         logger.debug(f"Processed data: {result}")
         return result
 
@@ -113,7 +115,7 @@ class SamplePlugin(WDBXPlugin):
         """Return examples of VS Code launch configurations for this plugin."""
         # Get base configurations from parent class
         base_configs = super().get_vs_code_launch_examples()
-        
+
         # Add plugin-specific configurations
         additional_configs = [
             {
@@ -142,7 +144,7 @@ class SamplePlugin(WDBXPlugin):
                 }
             }
         ]
-        
+
         # Combine base and additional configurations
         return base_configs + additional_configs
 
@@ -154,7 +156,7 @@ def run_demo(config_path: Optional[str] = None) -> None:
     console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     logger.addHandler(console_handler)
     logger.setLevel(logging.INFO)
-    
+
     # Load config if provided
     config = None
     if config_path and os.path.exists(config_path):
@@ -166,34 +168,34 @@ def run_demo(config_path: Optional[str] = None) -> None:
             logger.error(f"Failed to parse configuration file: {config_path}")
         except Exception as e:
             logger.error(f"Error loading configuration: {e}")
-    
+
     # Initialize plugin
     plugin = SamplePlugin(config)
     if not plugin.initialize():
         logger.error("Failed to initialize plugin")
         return
-    
+
     # Display plugin information
     logger.info(f"Sample Plugin {plugin.VERSION} initialized successfully")
     logger.info(f"Debug mode: {'Enabled' if plugin.debug_mode else 'Disabled'}")
-    
+
     # Example data processing
     sample_data = {
         "example_key": "example_value",
         "numbers": [1, 2, 3, 4, 5],
         "nested": {"a": 1, "b": 2}
     }
-    
+
     result = plugin.process_data(sample_data)
     logger.info(f"Processing result: {json.dumps(result, indent=2)}")
-    
+
     # Get and print VS Code launch examples
     if plugin.debug_mode:
         launch_examples = plugin.get_vs_code_launch_examples()
         logger.info("VS Code Launch Configuration Examples:")
         for i, example in enumerate(launch_examples, 1):
             logger.info(f"Example {i}:\n{json.dumps(example, indent=2)}")
-    
+
     # Shutdown plugin
     plugin.shutdown()
     logger.info("Sample plugin demo completed")
@@ -205,13 +207,13 @@ if __name__ == "__main__":
     parser.add_argument("--config", help="Path to configuration file")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--demo", action="store_true", help="Run demonstration")
-    
+
     args = parser.parse_args()
-    
+
     # Set debug environment variable if specified
     if args.debug:
         os.environ["DEBUG"] = "1"
-    
+
     # Run demo if requested or no arguments provided
     if args.demo or len(sys.argv) == 1:
         run_demo(args.config)

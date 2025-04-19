@@ -229,7 +229,7 @@ class WDBXMonitor:
 
                 # Trim history if needed
                 if len(self.stats_history) > self.max_history_size:
-                    self.stats_history = self.stats_history[-self.max_history_size :]
+                    self.stats_history = self.stats_history[-self.max_history_size:]
 
                 # Print stats if no terminal UI
                 if not RICH_AVAILABLE:
@@ -296,7 +296,7 @@ class WDBXMonitor:
 
         # Trim alerts if needed
         if len(self.alerts) > self.max_alerts:
-            self.alerts = self.alerts[-self.max_alerts :]
+            self.alerts = self.alerts[-self.max_alerts:]
 
     def _print_stats(self, stats: Dict[str, Any]) -> None:
         """Enhanced stats printing with color and formatting."""
@@ -836,7 +836,7 @@ if TEXTUAL_AVAILABLE:
                 return
 
             # Get the last stats entries for visualization
-            history = self.monitor.stats_history[-self.max_chart_points :]
+            history = self.monitor.stats_history[-self.max_chart_points:]
 
             if CHART_AVAILABLE:
                 # Create a new chart with the updated data
@@ -988,11 +988,11 @@ if TEXTUAL_AVAILABLE:
             self.update_interval = state["update_interval"]
             self.query_history = state["query_history"]
             self.custom_queries = state["custom_queries"]
-            
+
             # Update monitor settings
             self.monitor.alert_thresholds = state["monitor_settings"]["alert_thresholds"]
             self.monitor.max_history_size = state["monitor_settings"]["max_history_size"]
-            
+
             # Refresh UI
             await self.refresh()
             self.display_status("State loaded successfully")
@@ -1271,4 +1271,4 @@ if __name__ == "__main__":
 
     # Run the TUI with mock database
     mock_db = MockWDBX()
-    run_terminal_ui(mock_db) # type: ignore # Suppress type error for mock object
+    run_terminal_ui(mock_db)  # type: ignore # Suppress type error for mock object

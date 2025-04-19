@@ -42,7 +42,7 @@ def fix_final_style_issues():
                             break_point = max(break_points)
                             lines[idx] = prefix + content[: break_point + 1] + '"\n'
                             lines.insert(
-                                idx + 1, indent_str + 'f"' + content[break_point + 1 :] + suffix
+                                idx + 1, indent_str + 'f"' + content[break_point + 1:] + suffix
                             )
                         else:
                             # If no good break point, just add a break at a reasonable point
@@ -54,7 +54,7 @@ def fix_final_style_issues():
                         pos = line.rfind(" ", 50, 90)
                         if pos != -1:
                             lines[idx] = line[:pos] + '"\n'
-                            lines.insert(idx + 1, indent_str + '"' + line[pos + 1 :].lstrip('" '))
+                            lines.insert(idx + 1, indent_str + '"' + line[pos + 1:].lstrip('" '))
                         else:
                             # No good break point, try other split
                             lines[idx] = line[:90] + '"\n'
@@ -64,7 +64,7 @@ def fix_final_style_issues():
                     pos = line.rfind(" ", 50, 90)
                     if pos != -1:
                         lines[idx] = line[:pos] + "\n"
-                        lines.insert(idx + 1, indent_str + line[pos + 1 :])
+                        lines.insert(idx + 1, indent_str + line[pos + 1:])
                     else:
                         # No good break point, just break at 90 chars
                         lines[idx] = line[:90] + "\n"

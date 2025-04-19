@@ -81,7 +81,7 @@ def create_test_blocks(wdbx: WDBXCore, vectors: list[EmbeddingVector], count: in
     blocks = []
     for i in range(count):
         # Select vectors for this block (each block gets a subset of vectors)
-        block_vectors = vectors[i : i + 3]
+        block_vectors = vectors[i: i + 3]
 
         # Create block data
         data = {

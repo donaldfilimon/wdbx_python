@@ -616,7 +616,7 @@ class PerformanceMonitor:
             # Add to event history, maintaining max_history limit
             self.events[event_name].append(event)
             if len(self.events[event_name]) > self.max_history:
-                self.events[event_name] = self.events[event_name][-self.max_history :]
+                self.events[event_name] = self.events[event_name][-self.max_history:]
 
             # Update stats
             self._update_stats(event_name)
@@ -642,7 +642,7 @@ class PerformanceMonitor:
 
             # Keep only recent history
             if len(self.ml_memory_usage[key]) > self.max_history:
-                self.ml_memory_usage[key] = self.ml_memory_usage[key][-self.max_history :]
+                self.ml_memory_usage[key] = self.ml_memory_usage[key][-self.max_history:]
 
             # Update peak memory
             self.peak_memory = max(self.peak_memory, memory_bytes)

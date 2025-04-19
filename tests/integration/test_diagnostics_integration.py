@@ -5,6 +5,12 @@ Tests how the diagnostics module integrates with other WDBX components.
 """
 
 # Import from context
+from wdbx.utils.diagnostics import (
+    get_metrics,
+    register_component,
+    start_monitoring,
+    stop_monitoring,
+)
 import sys
 import threading
 import time
@@ -12,13 +18,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from wdbx.utils.diagnostics import (
-    get_metrics,
-    register_component,
-    start_monitoring,
-    stop_monitoring,
-)
 
 
 class MockComponent:

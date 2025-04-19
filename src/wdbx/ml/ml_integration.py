@@ -6,6 +6,7 @@ allowing for seamless conversion between NumPy, JAX, and PyTorch tensors,
 and enabling the use of advanced ML capabilities in the database.
 """
 
+import time
 import os
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -766,6 +767,3 @@ class FeatureStoreClient:
         except Exception as e:
             ml_logger.error(f"Error logging features: {e}")
             raise
-
-
-import time

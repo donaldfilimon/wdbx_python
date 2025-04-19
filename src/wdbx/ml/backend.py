@@ -7,6 +7,7 @@ This module provides a unified interface for different ML backends
 
 from __future__ import annotations
 
+import gc  # Add missing import for gc.collect()
 import importlib.util
 import os
 from enum import Enum
@@ -20,11 +21,24 @@ from numpy.typing import NDArray
 from ..core.constants import DEFAULT_ML_BACKEND, VECTOR_DIMENSION, logger
 from ..utils.memory_utils import register_for_memory_optimization
 
-# Type alias for array-like objects
-from . import JAX_AVAILABLE, TORCH_AVAILABLE, ArrayLike
+# Directly check for JAX and PyTorch availability to avoid circular imports
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    jnp = None
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
 
 # Type variable for generic vector operations
-T = TypeVar("T", bound=ArrayLike)
+T = TypeVar("T", bound=Any)  # Define ArrayLike as Any to avoid circular imports
 
 
 class BackendType(Enum):

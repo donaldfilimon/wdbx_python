@@ -2,6 +2,7 @@
 Unit tests for the model repository plugin.
 """
 
+import pytest
 import os
 import sys
 import tempfile
@@ -31,7 +32,6 @@ else:
     model_repo_available = True
 
 # Skip entire test class if dependencies not available
-import pytest
 
 
 class MockWDBX:

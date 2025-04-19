@@ -44,55 +44,55 @@ try:
     DISCORD_AVAILABLE = True
 except ImportError:
     DISCORD_AVAILABLE = False
-    
+
     # Mock discord classes if not available
     class commands:
         class Bot(object):
             pass
-            
+
         class Context(object):
             async def send(self, content=None, *, embed=None):
                 """Mock send method for Context."""
                 pass
-                
+
         class CommandError(Exception):
             pass
-            
+
         class CommandNotFound(Exception):
             pass
-            
+
         class MissingRequiredArgument(Exception):
             pass
-            
+
         class BadArgument(Exception):
             pass
-        
+
         class Cog:
             @staticmethod
             def listener():
                 def decorator(func):
                     return func
                 return decorator
-        
+
         @staticmethod
         def command(*args, **kwargs):
             def decorator(func):
                 return func
             return decorator
-        
+
         @staticmethod
         def has_permissions(*args, **kwargs):
             def decorator(func):
                 return func
             return decorator
-        
+
         @staticmethod
         def group(*args, **kwargs):
             def decorator(func):
                 func.command = lambda *args, **kwargs: lambda f: f
                 return func
             return decorator
-    
+
     class tasks:
         @staticmethod
         def loop(*args, **kwargs):
@@ -105,7 +105,7 @@ except ImportError:
                 func.change_interval = lambda **kwargs: None
                 return func
             return decorator
-    
+
     class discord:
         Intents = object
         Embed = object
@@ -171,6 +171,8 @@ except ImportError:
         "Visualization libraries (matplotlib, numpy, scikit-learn) not found. Visualize command disabled."
     )
 # Add custom exceptions
+
+
 class DiscordBotError(Exception):
     """Base exception for Discord bot-related errors."""
 
@@ -271,7 +273,7 @@ def create_help_embed():
     """Create a help embed with available commands."""
     if DISCORD_AVAILABLE:
         embed = discord.Embed(
-            title="WDBX Bot Help", 
+            title="WDBX Bot Help",
             description="Available commands for interacting with WDBX",
             color=0x3498db
         )
@@ -282,7 +284,7 @@ def create_help_embed():
 # Mock the WDBXCog class
 class WDBXCog:
     """WDBX Discord Cog."""
-    
+
     def __init__(self, bot, config, wdbx_instance=None):
         """Initialize the cog."""
         self.bot = bot
@@ -311,7 +313,8 @@ def connect_to_wdbx(host: str, port: int) -> Optional[Any]:
 def create_bot(config: BotConfig, wdbx_instance: Optional[Any] = None) -> Any:
     """Create and configure the Discord bot instance."""
     if not DISCORD_AVAILABLE:
-        raise BotSetupError("discord.py is not installed. Cannot create bot. Install with: pip install discord.py")
+        raise BotSetupError(
+            "discord.py is not installed. Cannot create bot. Install with: pip install discord.py")
 
     intents = discord.Intents.default()
     intents.members = True  # Needed for role checks potentially
@@ -323,10 +326,10 @@ def create_bot(config: BotConfig, wdbx_instance: Optional[Any] = None) -> Any:
 
     # Add the WDBX cog
     cog = WDBXCog(bot, config, wdbx_instance)
-    
+
     # Fix: Don't use asyncio.run in an already async context
     # Instead, we'll use a helper method to add the cog during the on_ready event
-    
+
     # Define an on_ready event
     @bot.event
     async def on_ready():
@@ -372,7 +375,8 @@ def run_bot(config: BotConfig, wdbx_instance: Optional[Any] = None) -> None:
             raise BotSetupError("Invalid Discord Bot Token") from None
         else:
             # Use proper string formatting
-            run_logger.critical("An unexpected error occurred while running the bot: %s", str(e), exc_info=True)
+            run_logger.critical(
+                "An unexpected error occurred while running the bot: %s", str(e), exc_info=True)
             raise  # Reraise the exception
 
 
@@ -381,7 +385,7 @@ if __name__ == "__main__":
         print("Error: discord.py is not installed. Install with: pip install discord.py")
         print("For full functionality, also install: matplotlib numpy scikit-learn")
         sys.exit(1)
-        
+
     if len(sys.argv) < 2:
         print("Usage: python discord_bot.py <path_to_config.json>")
         sys.exit(1)
@@ -436,4 +440,3 @@ if __name__ == "__main__":
         main_logger.critical(error_msg, exc_info=True)
         print("Error: %s" % e)
         sys.exit(1)
-

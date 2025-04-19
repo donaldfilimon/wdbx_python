@@ -2,6 +2,7 @@
 Unit tests for the visualization plugin.
 """
 
+import pytest
 import os
 import sys
 import tempfile
@@ -32,7 +33,6 @@ else:
     visualization_available = True
 
 # Skip entire test class if dependencies not available
-import pytest
 
 try:
     import numpy as np

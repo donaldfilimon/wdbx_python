@@ -240,7 +240,7 @@ class ServiceWorker(ABC):
 
             # Limit history size
             if len(self.health_history) > self.max_history_entries:
-                self.health_history = self.health_history[-self.max_history_entries :]
+                self.health_history = self.health_history[-self.max_history_entries:]
 
     def get_health_trend(self) -> Dict[str, Any]:
         """
@@ -253,7 +253,7 @@ class ServiceWorker(ABC):
             return {"trend": "unknown", "data_points": 0}
 
         # Simple trend analysis based on error frequency
-        recent_history = self.health_history[-min(20, len(self.health_history)) :]
+        recent_history = self.health_history[-min(20, len(self.health_history)):]
         error_states = sum(1 for entry in recent_history if entry["status"] != "healthy")
         error_ratio = error_states / len(recent_history)
 

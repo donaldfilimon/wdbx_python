@@ -214,7 +214,7 @@ class WDBXBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_vectors, batch_size):
-            batch = vectors[i : i + batch_size]
+            batch = vectors[i: i + batch_size]
             for vector in batch:
                 self.wdbx.create_vector(vector_data=vector)
 
@@ -246,7 +246,7 @@ class WDBXBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_queries, batch_size):
-            batch = query_vectors[i : i + batch_size]
+            batch = query_vectors[i: i + batch_size]
             for query in batch:
                 self.wdbx.find_similar_vectors(query_vector=query, top_k=top_k)
 
@@ -304,7 +304,7 @@ class FAISSBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_vectors, batch_size):
-            batch = vectors[i : i + batch_size]
+            batch = vectors[i: i + batch_size]
             self.index.add(batch)
 
         elapsed_time = time.time() - start_time
@@ -336,7 +336,7 @@ class FAISSBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_queries, batch_size):
-            batch = query_vectors[i : i + batch_size]
+            batch = query_vectors[i: i + batch_size]
             _, _ = self.index.search(batch, top_k)
 
         elapsed_time = time.time() - start_time
@@ -411,7 +411,7 @@ class QdrantBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_vectors, batch_size):
-            batch = vectors[i : i + batch_size]
+            batch = vectors[i: i + batch_size]
             points = [
                 models.PointStruct(id=i + j, vector=batch[j].tolist(), payload={"index": i + j})
                 for j in range(len(batch))
@@ -446,7 +446,7 @@ class QdrantBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_queries, batch_size):
-            batch = query_vectors[i : i + batch_size]
+            batch = query_vectors[i: i + batch_size]
             for query in batch:
                 self.client.search(
                     collection_name=self.config.qdrant_collection,
@@ -571,7 +571,7 @@ class MilvusBenchmarker(DatabaseBenchmarker):
         start_time = time.time()
 
         for i in range(0, num_queries, batch_size):
-            batch = query_vectors[i : i + batch_size]
+            batch = query_vectors[i: i + batch_size]
             for query in batch:
                 search_params = {"metric_type": "COSINE"}
                 self.collection.search(

@@ -178,7 +178,7 @@ class SystemMonitor:
             if len(self.metrics["history"]["timestamps"]) > self.max_history_points:
                 for key in self.metrics["history"]:
                     self.metrics["history"][key] = self.metrics["history"][key][
-                        -self.max_history_points :
+                        -self.max_history_points:
                     ]
 
             # Update component metrics
@@ -230,7 +230,7 @@ class SystemMonitor:
 
         # Limit event history
         if len(self.metrics["events"]) > self.max_history_points:
-            self.metrics["events"] = self.metrics["events"][-self.max_history_points :]
+            self.metrics["events"] = self.metrics["events"][-self.max_history_points:]
 
         # Log important events
         if event_type in ("error", "warning"):

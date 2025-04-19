@@ -125,7 +125,7 @@ def chunked_list(items: List[Any], chunk_size: int) -> List[List[Any]]:
     if chunk_size < 1:
         raise ValueError("Chunk size must be at least 1")
 
-    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
+    return [items[i: i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def bytes_to_human_readable(size_bytes: int) -> str:

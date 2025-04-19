@@ -201,7 +201,7 @@ class WDBXConfig:
         # Process each environment variable
         for env_name, env_value in env_vars.items():
             # Convert from ENV_VAR_NAME to env_var_name
-            config_name = env_name[len(prefix) :].lower()
+            config_name = env_name[len(prefix):].lower()
 
             # Skip if not a valid config field
             if config_name not in config_fields:

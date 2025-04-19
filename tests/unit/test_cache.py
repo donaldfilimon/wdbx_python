@@ -61,21 +61,21 @@ def wdbx_with_cache(mock_persona_manager):
 
     # Set up all the mocks we need
     with (
-        patch("src.wdbx.core.VectorStore") as mock_vs,
-        patch("src.wdbx.core.ShardManager") as mock_sm,
-        patch("src.wdbx.core.BlockChainManager") as mock_bcm,
-        patch("src.wdbx.core.MVCCManager") as mock_mvcc,
-        patch("src.wdbx.core.NeuralBacktracker") as mock_nt,
-        patch("src.wdbx.core.MultiHeadAttention") as mock_mha,
-        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as mock_pm,
-        patch("src.wdbx.core.ContentFilter") as mock_cf,
-        patch("src.wdbx.core.BiasDetector") as mock_bd,
-        patch("src.wdbx.core.PersonaTokenManager") as mock_ptm,
+        patch("src.wdbx.core.VectorStore") as _,
+        patch("src.wdbx.core.ShardManager") as _,
+        patch("src.wdbx.core.BlockChainManager") as _,
+        patch("src.wdbx.core.MVCCManager") as _,
+        patch("src.wdbx.core.NeuralBacktracker") as _,
+        patch("src.wdbx.core.MultiHeadAttention") as _,
+        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as _,
+        patch("src.wdbx.core.ContentFilter") as _,
+        patch("src.wdbx.core.BiasDetector") as _,
+        patch("src.wdbx.core.PersonaTokenManager") as _,
     ):
 
         # Setup the async mock for search
-        mock_vs.return_value.search = AsyncMock()
-        mock_vs.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
+        VectorStore.return_value.search = AsyncMock()
+        VectorStore.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
 
         # Create a mock for the distributed query planner
         mock_planner = AsyncMock()
@@ -106,21 +106,21 @@ def wdbx_with_ttl_cache(mock_persona_manager):
 
     # Set up all the mocks we need
     with (
-        patch("src.wdbx.core.VectorStore") as mock_vs,
-        patch("src.wdbx.core.ShardManager") as mock_sm,
-        patch("src.wdbx.core.BlockChainManager") as mock_bcm,
-        patch("src.wdbx.core.MVCCManager") as mock_mvcc,
-        patch("src.wdbx.core.NeuralBacktracker") as mock_nt,
-        patch("src.wdbx.core.MultiHeadAttention") as mock_mha,
-        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as mock_pm,
-        patch("src.wdbx.core.ContentFilter") as mock_cf,
-        patch("src.wdbx.core.BiasDetector") as mock_bd,
-        patch("src.wdbx.core.PersonaTokenManager") as mock_ptm,
+        patch("src.wdbx.core.VectorStore") as _,
+        patch("src.wdbx.core.ShardManager") as _,
+        patch("src.wdbx.core.BlockChainManager") as _,
+        patch("src.wdbx.core.MVCCManager") as _,
+        patch("src.wdbx.core.NeuralBacktracker") as _,
+        patch("src.wdbx.core.MultiHeadAttention") as _,
+        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as _,
+        patch("src.wdbx.core.ContentFilter") as _,
+        patch("src.wdbx.core.BiasDetector") as _,
+        patch("src.wdbx.core.PersonaTokenManager") as _,
     ):
 
         # Setup the async mock for search
-        mock_vs.return_value.search = AsyncMock()
-        mock_vs.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
+        VectorStore.return_value.search = AsyncMock()
+        VectorStore.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
 
         # Create a mock for the distributed query planner
         mock_planner = AsyncMock()
@@ -149,21 +149,21 @@ def wdbx_without_cache(mock_persona_manager):
 
     # Set up all the mocks we need
     with (
-        patch("src.wdbx.core.VectorStore") as mock_vs,
-        patch("src.wdbx.core.ShardManager") as mock_sm,
-        patch("src.wdbx.core.BlockChainManager") as mock_bcm,
-        patch("src.wdbx.core.MVCCManager") as mock_mvcc,
-        patch("src.wdbx.core.NeuralBacktracker") as mock_nt,
-        patch("src.wdbx.core.MultiHeadAttention") as mock_mha,
-        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as mock_pm,
-        patch("src.wdbx.core.ContentFilter") as mock_cf,
-        patch("src.wdbx.core.BiasDetector") as mock_bd,
-        patch("src.wdbx.core.PersonaTokenManager") as mock_ptm,
+        patch("src.wdbx.core.VectorStore") as _,
+        patch("src.wdbx.core.ShardManager") as _,
+        patch("src.wdbx.core.BlockChainManager") as _,
+        patch("src.wdbx.core.MVCCManager") as _,
+        patch("src.wdbx.core.NeuralBacktracker") as _,
+        patch("src.wdbx.core.MultiHeadAttention") as _,
+        patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as _,
+        patch("src.wdbx.core.ContentFilter") as _,
+        patch("src.wdbx.core.BiasDetector") as _,
+        patch("src.wdbx.core.PersonaTokenManager") as _,
     ):
 
         # Setup the async mock for search
-        mock_vs.return_value.search = AsyncMock()
-        mock_vs.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
+        VectorStore.return_value.search = AsyncMock()
+        VectorStore.return_value.search.return_value = [("id1", 0.9), ("id2", 0.8), ("id3", 0.7)]
 
         # Create a mock for the distributed query planner
         mock_planner = AsyncMock()
@@ -328,16 +328,16 @@ class TestCacheOperations:
 
         # Set up all the mocks we need
         with (
-            patch("src.wdbx.core.VectorStore") as mock_vs,
-            patch("src.wdbx.core.ShardManager") as mock_sm,
-            patch("src.wdbx.core.BlockChainManager") as mock_bcm,
-            patch("src.wdbx.core.MVCCManager") as mock_mvcc,
-            patch("src.wdbx.core.NeuralBacktracker") as mock_nt,
-            patch("src.wdbx.core.MultiHeadAttention") as mock_mha,
-            patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as mock_pm,
-            patch("src.wdbx.core.ContentFilter") as mock_cf,
-            patch("src.wdbx.core.BiasDetector") as mock_bd,
-            patch("src.wdbx.core.PersonaTokenManager") as mock_ptm,
+            patch("src.wdbx.core.VectorStore") as _,
+            patch("src.wdbx.core.ShardManager") as _,
+            patch("src.wdbx.core.BlockChainManager") as _,
+            patch("src.wdbx.core.MVCCManager") as _,
+            patch("src.wdbx.core.NeuralBacktracker") as _,
+            patch("src.wdbx.core.MultiHeadAttention") as _,
+            patch("src.wdbx.core.PersonaManager", return_value=mock_persona_manager) as _,
+            patch("src.wdbx.core.ContentFilter") as _,
+            patch("src.wdbx.core.BiasDetector") as _,
+            patch("src.wdbx.core.PersonaTokenManager") as _,
         ):
 
             wdbx = WDBX(config=config)
@@ -348,7 +348,7 @@ class TestCacheOperations:
             wdbx.distributed_query_planner = mock_planner
 
             # Create multiple distinct vectors to fill the cache
-            for i in range(5):  # More vectors than cache size
+            for _ in range(5):  # More vectors than cache size
                 vector = np.random.rand(128).astype(np.float32)
                 await wdbx.search_similar_vectors(vector, top_k=10)
 

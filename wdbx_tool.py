@@ -11,7 +11,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 SCRIPT_DIR = Path(__file__).parent / "scripts"
 PROJECT_ROOT = Path(__file__).parent

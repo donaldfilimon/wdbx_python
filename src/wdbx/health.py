@@ -195,12 +195,12 @@ class HealthMonitor:
             # Warning threshold: Process using more than 30% of system memory or system at 80%
             if process_percent > 30 or system_percent > 80:
                 status = HealthStatus.WARNING
-                description = f"High memory usage: {memory_usage_mb:.1f} MB ({process_percent:.1f}% of system)"
+                description = f"High memory usage: {memory_usage_mb: .1f}  MB ({process_percent: .1f} % of system) "
 
             # Error threshold: Process using more than 50% of system memory or system at 90%
             if process_percent > 50 or system_percent > 90:
                 status = HealthStatus.ERROR
-                description = f"Critical memory usage: {memory_usage_mb:.1f} MB ({process_percent:.1f}% of system)"
+                description = f"Critical memory usage: {memory_usage_mb: .1f}  MB ({process_percent: .1f} % of system) "
 
             return HealthCheck(
                 name="memory_usage",

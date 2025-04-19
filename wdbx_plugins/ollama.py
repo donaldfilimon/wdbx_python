@@ -788,7 +788,7 @@ def cmd_ollama_batch(db: Any, args: str) -> None:
 
         # Process in batches
         for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
+            batch = texts[i: i + batch_size]
             processed, errors = _process_batch(db, batch, model, file_path)
             total_processed += processed
             total_errors += errors

@@ -5,6 +5,23 @@ Provides commands to interact with the WDBX system, including
 server management, data inspection, configuration, and visualization.
 """
 
+from .entry_points import (
+    benchmark_main,
+    cli_main,
+    dashboard_main,
+    parse_custom_args,
+    print_banner,
+    web_main,
+)
+from .cli import (
+    CLI_THEMES,
+    embed_text,
+    handle_plugin_command,
+    main,
+    parse_args,
+    run_interactive_mode,
+    run_server,
+)
 import logging
 import sys
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -18,25 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger("wdbx.cli")
 
 # Import CLI module functions
-from .cli import (
-    CLI_THEMES,
-    embed_text,
-    handle_plugin_command,
-    main,
-    parse_args,
-    run_interactive_mode,
-    run_server,
-)
 
 # Import entry points
-from .entry_points import (
-    benchmark_main,
-    cli_main,
-    dashboard_main,
-    parse_custom_args,
-    print_banner,
-    web_main,
-)
 
 # Import plugin loader components
 try:

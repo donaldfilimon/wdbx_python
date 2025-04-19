@@ -26,3 +26,6 @@ mkdocs-material>=8.5.0
 types-requests>=2.25.0
 types-setuptools>=57.0.0
 numpy-typing>=0.1.0
+
+-r constraints.txt
+-e .

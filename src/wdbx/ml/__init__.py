@@ -90,13 +90,13 @@ class OptimizerBase:
         raise NotImplementedError("Subclasses must implement this method")
 
 
+# Import after defining constants to avoid circular imports
 from .attention import MultiHeadAttention
-
-# Forward imports to make them available directly from wdbx.ml
 from .backend import BackendType, MLBackend, get_ml_backend
 from .ml_integration import FeatureStoreClient, MLOpsProvider, ModelServingClient
 from .neural_backtracking import NeuralBacktracker
 
+# Forward imports to make them available directly from wdbx.ml
 # Type aliases for common ML types
 ModelType = Union["torch.nn.Module", Any]  # Any represents other model types
 TensorDict = Dict[str, "ArrayLike"]

@@ -41,7 +41,7 @@ def fix_line_lengths():
                                 + "\n"
                                 + indent
                                 + "    "
-                                + line[comma + 1 :].lstrip()
+                                + line[comma + 1:].lstrip()
                             )
                         else:
                             # Try to split before the closing parenthesis
@@ -57,7 +57,7 @@ def fix_line_lengths():
                 # For other lines, find a space to break at
                 space_pos = line.rfind(" ", 40, 90)
                 if space_pos != -1:
-                    lines[idx] = line[:space_pos] + "\n" + indent + line[space_pos + 1 :]
+                    lines[idx] = line[:space_pos] + "\n" + indent + line[space_pos + 1:]
 
     # Write the changes back to the file
     with open("wdbx_plugins/web_scraper.py", "w", encoding="utf-8") as file:
