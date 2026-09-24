@@ -1,23 +1,83 @@
 name: Lint
 
+# Trusted same-repo events (push, same-repo pull requests) run on the macOS
+# arm64 self-hosted runner registered to this repository with the label
+# wdbx_python. Fork pull requests stay on GitHub-hosted runners only: never
+# schedule untrusted code on the self-hosted machine. Until a runner with these
+# labels is online, the self-hosted jobs wait in the queue.
+# See docs/SelfHostedRunner.md.
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
+    if: >
+      github.repository == 'donaldfilimon/wdbx_python' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, macOS, ARM64, wdbx_python]
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"] # Test against multiple Python versions
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # On macOS, setup-python installs into /Users/runner/hostedtoolcache
+      # (its prebuilt interpreters are not relocatable). That directory must
+      # exist and be writable by the runner user; see docs/SelfHostedRunner.md.
+      # The newest arm64 builds are 3.9.13, 3.10.11 and 3.11.9.
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black isort autoflake
+          pip install -e ".[dev]"
+
+      - name: Run integrated linter
+        run: python scripts/integrated_linter.py --verbose
+
+      # upload-artifact@v4 rejects a second upload under the same name, so
+      # each matrix leg gets its own artifact.
+      - name: Upload linting report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linting-reports-${{ matrix.python-version }}
+          path: linting_reports/
+          retention-days: 7
+
+  lint-hosted:
+    name: lint (GitHub-hosted, fork PRs)
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11"] # Test against multiple Python versions
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -32,9 +92,9 @@ jobs:
         run: python scripts/integrated_linter.py --verbose
 
       - name: Upload linting report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linting-reports
+          name: linting-reports-${{ matrix.python-version }}
           path: linting_reports/
           retention-days: 7

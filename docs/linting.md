@@ -293,7 +293,7 @@ def process_data(
 
 ## Continuous Integration
 
-The project uses GitHub Actions to run linting checks:
+The project uses GitHub Actions to run linting checks. The actual workflow is `.github/workflows/lint.yml`; same-repo runs use a self-hosted macOS runner (see [SelfHostedRunner.md](SelfHostedRunner.md)). A simplified example:
 
 ```yaml
 name: Lint
